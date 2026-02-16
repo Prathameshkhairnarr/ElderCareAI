@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../services/otp_service.dart';
+import '../services/auth_service.dart';
 import '../widgets/page_transition.dart';
-import 'otp_verification_screen.dart';
+import 'dashboard_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -14,8 +14,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController(); // e.g. +919876543210
   final _pinController = TextEditingController();
+
   final _formKey = GlobalKey<FormState>();
-  final _otpService = OtpService();
 
   String _selectedRole = 'elder';
   bool _isLoading = false;
@@ -33,7 +33,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  Future<void> _sendOtp() async {
+  Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
@@ -41,39 +41,38 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _error = null;
     });
 
-    String phone = _phoneController.text.trim();
-    // Basic formatting: ensure it starts with + if not present (assuming India for demo)
-    if (!phone.startsWith('+')) {
-      phone = '+91$phone';
-    }
+    try {
+      String phone = _phoneController.text.trim();
+      // Ensure +91 for consistency if needed, or just normalize in backend
+      // But user asked for simple login/pass, so we accept what they type
 
-    await _otpService.sendOtp(
-      phoneNumber: phone,
-      onCodeSent: (verificationId) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
+      final success = await AuthService().register(
+        name: _nameController.text.trim(),
+        phone: phone,
+        pin: _pinController.text.trim(),
+        role: _selectedRole,
+      );
 
-        Navigator.of(context).push(
-          PageTransition(
-            page: OtpVerificationScreen(
-              verificationId: verificationId,
-              name: _nameController.text.trim(),
-              phone: phone,
-              pin: _pinController.text.trim(),
-              role: _selectedRole,
-              otpService: _otpService,
-            ),
-          ),
+      if (!mounted) return;
+
+      if (success) {
+        Navigator.of(context).pushAndRemoveUntil(
+          PageTransition(page: const DashboardScreen()),
+          (route) => false,
         );
-      },
-      onError: (message) {
-        if (!mounted) return;
+      } else {
         setState(() {
           _isLoading = false;
-          _error = message;
+          _error = 'Registration failed. Try again.';
         });
-      },
-    );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = e.toString().replaceAll('Exception: ', '');
+      });
+    }
   }
 
   @override
@@ -233,7 +232,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           SizedBox(
                             height: 52,
                             child: ElevatedButton(
-                              onPressed: _isLoading ? null : _sendOtp,
+                              onPressed: _isLoading ? null : _handleRegister,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF4FC3F7),
                                 foregroundColor: const Color(0xFF1A1A2E),
@@ -250,7 +249,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       ),
                                     )
                                   : const Text(
-                                      'Send OTP',
+                                      'Sign Up',
                                       style: TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,

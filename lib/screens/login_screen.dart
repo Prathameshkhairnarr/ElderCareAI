@@ -12,8 +12,8 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _phoneController = TextEditingController(text: '9876543210');
-  final _pinController = TextEditingController(text: '1234');
+  final _phoneController = TextEditingController();
+  final _pinController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   bool _obscurePin = true;
@@ -26,21 +26,22 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
 
-    final user = await AuthService().login(
-      _phoneController.text.trim(),
-      _pinController.text.trim(),
-    );
+    try {
+      await AuthService().login(
+        _phoneController.text.trim(),
+        _pinController.text.trim(),
+      );
 
-    if (!mounted) return;
-
-    if (user != null) {
+      if (!mounted) return;
       Navigator.of(
         context,
       ).pushReplacement(PageTransition(page: const DashboardScreen()));
-    } else {
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _error = 'Invalid phone number or PIN';
+        // Strip "Exception: " prefix if present
+        _error = e.toString().replaceAll('Exception: ', '');
       });
     }
   }
@@ -251,43 +252,79 @@ class _LoginScreenState extends State<LoginScreen> {
                                         ),
                                 ),
                               ),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Divider(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.15,
+                                      ),
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    child: Text(
+                                      'OR',
+                                      style: TextStyle(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.4,
+                                        ),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Divider(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.15,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                height: 52,
+                                child: OutlinedButton.icon(
+                                  onPressed: () {
+                                    Navigator.of(context).push(
+                                      PageTransition(
+                                        page: const RegisterScreen(),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(
+                                    Icons.person_add_rounded,
+                                    size: 20,
+                                  ),
+                                  label: const Text(
+                                    'Create Account',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: const Color(0xFF4FC3F7),
+                                    side: BorderSide(
+                                      color: const Color(
+                                        0xFF4FC3F7,
+                                      ).withValues(alpha: 0.5),
+                                      width: 1.5,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        'Demo: 9876543210 / 1234',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white.withValues(alpha: 0.35),
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            "New user? ",
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.6),
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: () {
-                              Navigator.of(context).push(
-                                PageTransition(page: const RegisterScreen()),
-                              );
-                            },
-                            child: const Text(
-                              "Register",
-                              style: TextStyle(
-                                color: Color(0xFF4FC3F7),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
                       ),
                     ],
                   ),

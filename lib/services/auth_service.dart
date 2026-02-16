@@ -8,12 +8,20 @@ class UserProfile {
   final String name;
   final String phone;
   final UserRole role;
+  final bool isActive;
+  final bool isPhoneVerified;
+  final String? createdAt;
+  final String? lastLoginAt;
 
   UserProfile({
     required this.id,
     required this.name,
     required this.phone,
     required this.role,
+    this.isActive = true,
+    this.isPhoneVerified = true,
+    this.createdAt,
+    this.lastLoginAt,
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
@@ -25,8 +33,23 @@ class UserProfile {
         (r) => r.name == (json['role'] as String),
         orElse: () => UserRole.elder,
       ),
+      isActive: json['is_active'] as bool? ?? true,
+      isPhoneVerified: json['is_phone_verified'] as bool? ?? true,
+      createdAt: json['created_at'] as String?,
+      lastLoginAt: json['last_login_at'] as String?,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'phone': phone,
+    'role': role.name,
+    'is_active': isActive,
+    'is_phone_verified': isPhoneVerified,
+    'created_at': createdAt,
+    'last_login_at': lastLoginAt,
+  };
 }
 
 enum UserRole { elder, caregiver, admin }
@@ -37,8 +60,11 @@ class AuthService {
   factory AuthService() => _instance;
   AuthService._internal();
 
-  static const _baseUrl = 'http://10.0.2.2:8000'; // Android emulator
-  // Use 'http://localhost:8000' for web / desktop
+  // 🔴 PHYSICAL DEVICE: Your Phone & PC must be on SAME Wi-Fi. Turn off Mobile Data (5G).
+  // Run 'ipconfig' to find PC IP. If fails, use Emulator.
+  // 🔴 EMULATOR CONFIG: Use 10.0.2.2 for Android Emulator
+  static const _baseUrl = 'http://10.0.2.2:8001';
+  // static const _baseUrl = 'http://10.0.2.2:8001'; // EMULATOR ONLY
 
   static const _tokenKey = 'jwt_token';
   static const _userKey = 'user_data';
@@ -49,6 +75,16 @@ class AuthService {
   UserProfile? get currentUser => _currentUser;
   String? get token => _token;
   bool get isLoggedIn => _token != null;
+
+  String _normalizePhone(String phone) {
+    // Remove all non-digits
+    final digits = phone.replaceAll(RegExp(r'[^\d]'), '');
+    // Take last 10 digits if longer (e.g. 919876543210 -> 9876543210)
+    if (digits.length > 10) {
+      return digits.substring(digits.length - 10);
+    }
+    return digits;
+  }
 
   // ── Init (call on app start to restore session) ──────
   Future<void> init() async {
@@ -66,20 +102,34 @@ class AuthService {
     required String phone,
     required String pin,
     required String role,
-    String? firebaseToken,
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/auth/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'name': name,
-          'phone': phone,
-          'password': pin,
-          'role': role,
-          'firebase_token': firebaseToken,
-        }),
-      );
+      final normalizedPhone = _normalizePhone(phone);
+      print('🔵 Attempting registration for: $name ($normalizedPhone)');
+      print('🔵 URL: $_baseUrl/auth/register');
+
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/auth/register'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'name': name,
+              'phone': normalizedPhone,
+              'password': pin,
+              'role': role,
+            }),
+          )
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              print('❌ Registration request timed out after 30 seconds');
+              throw Exception(
+                'Connection timed out. If on real device, check IP in auth_service.dart.',
+              );
+            },
+          );
+
+      print('🔵 Registration response status: ${response.statusCode}');
 
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
@@ -93,23 +143,49 @@ class AuthService {
 
         return true;
       } else {
-        // You might want to throw specific errors here based on response body
-        // print('Register failed: ${response.body}');
-        return false;
+        // Extract the actual error from backend
+        try {
+          final errBody = jsonDecode(response.body);
+          final detail = errBody['detail'] ?? 'Unknown error';
+          throw Exception('$detail');
+        } catch (e) {
+          if (e is Exception && e.toString().contains('Exception:')) rethrow;
+          throw Exception('Server error (${response.statusCode})');
+        }
       }
+    } on http.ClientException catch (_) {
+      throw Exception(
+        'Cannot reach server. Use IO address for Emulator (10.0.2.2) or Local IP for Device.',
+      );
     } catch (e) {
-      return false;
+      if (e is Exception) rethrow;
+      throw Exception('Network error: $e');
     }
   }
 
   // ── Login ────────────────────────────────────────────
-  Future<UserProfile?> login(String phone, String pin) async {
+  Future<UserProfile> login(String phone, String pin) async {
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/auth/login'),
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: {'username': phone, 'password': pin},
-      );
+      final normalizedPhone = _normalizePhone(phone);
+      print('🔵 Attempting login for: $normalizedPhone original: $phone');
+      print('🔵 URL: $_baseUrl/auth/login');
+
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/auth/login'),
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: {'username': normalizedPhone, 'password': pin},
+          )
+          .timeout(
+            const Duration(seconds: 10), // Reduced timeout for faster feedback
+            onTimeout: () {
+              throw Exception(
+                'Connection timed out. Check IP & ensure Phone/PC are on same Wi-Fi.',
+              );
+            },
+          );
+
+      print('🔵 Login response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -121,11 +197,19 @@ class AuthService {
         await prefs.setString(_tokenKey, _token!);
         await prefs.setString(_userKey, jsonEncode(data['user']));
 
-        return _currentUser;
+        return _currentUser!;
+      } else if (response.statusCode == 401) {
+        throw Exception('Invalid phone number or PIN');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
       }
-      return null;
+    } on http.ClientException catch (_) {
+      throw Exception(
+        'Cannot reach server. Check IP in auth_service.dart or Firewall.',
+      );
     } catch (e) {
-      return null;
+      if (e.toString().contains('Exception:')) rethrow;
+      throw Exception('Login failed: $e');
     }
   }
 

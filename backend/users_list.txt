@@ -1,0 +1,8 @@
+Found 7 users:
+ID: 1 | Name: Rajesh Kumar | Phone: '9876543210' | Role: elder
+ID: 2 | Name: Rajesh Kumar | Phone: '9999999999' | Role: elder
+ID: 3 | Name: Rajesh Kumar | Phone: '9999999994' | Role: elder
+ID: 4 | Name: Test User | Phone: '9999999952' | Role: elder
+ID: 5 | Name: viraj | Phone: '8805253601' | Role: elder
+ID: 6 | Name: Debug User | Phone: '9998887776' | Role: elder
+ID: 7 | Name: viraj | Phone: '8421988230' | Role: elder

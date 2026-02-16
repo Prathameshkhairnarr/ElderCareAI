@@ -1,0 +1,29 @@
+
+# 1. Health Monitor Backend (MISSING)
+# -----------------------------------
+# Backend:
+# - Create `HealthVitals` model (user_id, type, value, unit, recorded_at)
+# - Create `routers/health.py` with GET/POST endpoints
+# - Create `schemas/health_schemas.py`
+# - Update `main.py` to include health router
+#
+# Frontend:
+# - Create `HealthService` to talk to backend
+# - Update `HealthMonitorScreen` to fetch/post data instead of using random
+# - Update `MyHealthScreen` to show aggregated stats from backend
+
+# 2. Call Protection (EXISTS BUT UNVERIFIED)
+# ------------------------------------------
+# Backend:
+# - `routers/call_protection.py` exists
+# - Need to verify if tables `phone_reputation`, `user_reports` exist in DB
+#
+# Frontend:
+# - Need to check if `CallService` connects to these endpoints
+# - UI seems to be missing or I haven't seen it active
+
+# 3. Settings (LOCAL ONLY)
+# ------------------------
+# - User wants "proper backend".
+# - Should sync settings to DB? Or is local sufficient?
+# - For now, focus on Health + Call as they are "core features".

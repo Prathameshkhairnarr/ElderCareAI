@@ -1,0 +1,2 @@
+[3, 'ashur', '0987654321', '$2b$12$oTn2r726a7btXj2ZyUyIpeuuYeIYc4a0VwaAqFhCXiRwI.GP5AM9i', 'elder', '2026-02-15 10:42:24.570635']
+['id', 'name', 'phone', 'password_hash', 'role', 'created_at']
