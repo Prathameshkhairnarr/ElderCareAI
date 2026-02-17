@@ -282,22 +282,4 @@ class ApiService {
       return null;
     }
   }
-
-  // ── Voice Analysis (Transcript) ──────────────────────
-  Future<Map<String, dynamic>?> analyzeVoice(String transcript) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/voice/analyze-call'),
-        headers: _headers,
-        body: jsonEncode({'transcript': transcript}),
-      );
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print("Analyze Voice Error: $e");
-      return null;
-    }
-  }
 }

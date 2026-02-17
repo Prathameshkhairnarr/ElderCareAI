@@ -12,9 +12,7 @@ import 'sos_screen.dart';
 import 'health_monitor_screen.dart';
 import 'call_protection_screen.dart';
 import 'alerts_history_screen.dart';
-import 'voice_analysis_screen.dart';
 import 'my_health_screen.dart';
-
 
 import 'settings/settings_screen.dart';
 
@@ -85,10 +83,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       body: IndexedStack(
         index: _selectedNavIndex,
         children: [
-          _buildHomeTab(),         // 0: Home
+          _buildHomeTab(), // 0: Home
           const SmsAnalyzerScreen(), // 1: SMS
-          const SosScreen(),       // 2: SOS
-          const SettingsScreen(),  // 3: Settings
+          const SosScreen(), // 2: SOS
+          const SettingsScreen(), // 3: Settings
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -200,10 +198,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                             child: IconButton(
                               onPressed: _logout,
-                              icon: const Icon(
-                                Icons.logout_rounded,
-                                size: 20,
-                              ),
+                              icon: const Icon(Icons.logout_rounded, size: 20),
                               tooltip: 'Logout',
                             ),
                           ),
@@ -254,27 +249,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             GestureDetector(
                               onTap: () => Navigator.push(
                                 context,
-                                MaterialPageRoute(builder: (context) => const AlertsHistoryScreen()),
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      const AlertsHistoryScreen(),
+                                ),
                               ),
                               child: RiskIndicator(score: _risk!.score),
                             )
                           else
-
                             // Show a default risk indicator when API returns null
                             const RiskIndicator(score: 0),
                           const SizedBox(height: 12),
                           Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 48,
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 48),
                             child: Text(
                               _risk?.details ??
                                   'No threats detected. You\'re safe!',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 13,
-                                color: Theme.of(context).colorScheme.onSurface
-                                    .withValues(alpha: 0.5),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.5),
                                 height: 1.5,
                               ),
                             ),
@@ -366,17 +362,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           MaterialPageRoute(builder: (context) => const AlertsHistoryScreen()),
         ),
       ),
-      _DashCardData(
-        icon: Icons.record_voice_over_rounded,
-        title: 'Call Analyzer',
-        subtitle: 'Manual transcript check',
-        color: const Color(0xFF5E35B1),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const VoiceAnalysisScreen()),
-        ),
-      ),
-
 
       _DashCardData(
         icon: Icons.monitor_heart_rounded,

@@ -30,7 +30,7 @@ class EmergencyContact {
     'name': name,
     'phone': phone,
     'relationship': relationship,
-    'colorIndex': colorIndex,
+    'color_index': colorIndex,
     'photo_base64': photoBase64,
   };
 
@@ -40,7 +40,7 @@ class EmergencyContact {
       name: json['name'],
       phone: json['phone'],
       relationship: json['relationship'],
-      colorIndex: json['colorIndex'] ?? 0,
+      colorIndex: json['color_index'] ?? json['colorIndex'] ?? 0,
       photoBase64: json['photo_base64'] ?? json['photoBase64'],
     );
   }

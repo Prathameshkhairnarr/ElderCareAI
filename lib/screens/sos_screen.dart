@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../services/api_service.dart';
 import '../services/emergency_service.dart';
 import '../widgets/sos_button.dart';
@@ -56,7 +57,11 @@ class _SosScreenState extends State<SosScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 28),
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.redAccent,
+              size: 28,
+            ),
             SizedBox(width: 10),
             Text('Confirm SOS'),
           ],
@@ -80,7 +85,9 @@ class _SosScreenState extends State<SosScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               child: const Text('Send SOS'),
             ),
@@ -96,7 +103,9 @@ class _SosScreenState extends State<SosScreen> {
     // Also directly sync with backend
     final success = await _api.triggerSos();
     if (!mounted) return;
-    setState(() => _triggered = success || _emergencyService.lastStatus != null);
+    setState(
+      () => _triggered = success || _emergencyService.lastStatus != null,
+    );
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -129,24 +138,41 @@ class _SosScreenState extends State<SosScreen> {
   // ── Add Contact from Phone ──────────────────────
   Future<void> _pickContact() async {
     try {
-      // Request permission
-      if (!await FlutterContacts.requestPermission(readonly: true)) {
+      // 1. Check & Request permission with permission_handler for better control
+      var status = await Permission.contacts.status;
+
+      if (status.isPermanentlyDenied) {
+        if (!mounted) return;
+        _showPermissionSettingsDialog();
+        return;
+      }
+
+      if (!status.isGranted) {
+        status = await Permission.contacts.request();
+      }
+
+      if (!status.isGranted) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Contact permission is required to add emergency contacts'),
+            content: Text(
+              'Contact permission is required to add emergency contacts',
+            ),
             behavior: SnackBarBehavior.floating,
           ),
         );
         return;
       }
 
-      // Pick a contact
+      // 2. Pick a contact via flutter_contacts
       final contact = await FlutterContacts.openExternalPick();
       if (contact == null || !mounted) return;
 
       // Get full contact details
-      final fullContact = await FlutterContacts.getContact(contact.id, withProperties: true);
+      final fullContact = await FlutterContacts.getContact(
+        contact.id,
+        withProperties: true,
+      );
       if (fullContact == null || fullContact.phones.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -198,11 +224,24 @@ class _SosScreenState extends State<SosScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            for (final rel in ['Son', 'Daughter', 'Spouse', 'Caregiver', 'Doctor', 'Friend', 'Other'])
+            for (final rel in [
+              'Son',
+              'Daughter',
+              'Spouse',
+              'Caregiver',
+              'Doctor',
+              'Friend',
+              'Other',
+            ])
               ListTile(
                 title: Text(rel),
-                leading: Icon(_relationIcon(rel), color: const Color(0xFF4FC3F7)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                leading: Icon(
+                  _relationIcon(rel),
+                  color: const Color(0xFF4FC3F7),
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
                 onTap: () => Navigator.pop(ctx, rel),
               ),
           ],
@@ -213,14 +252,54 @@ class _SosScreenState extends State<SosScreen> {
 
   IconData _relationIcon(String rel) {
     switch (rel) {
-      case 'Son': return Icons.person_rounded;
-      case 'Daughter': return Icons.person_rounded;
-      case 'Spouse': return Icons.favorite_rounded;
-      case 'Caregiver': return Icons.medical_services_rounded;
-      case 'Doctor': return Icons.local_hospital_rounded;
-      case 'Friend': return Icons.people_rounded;
-      default: return Icons.person_outline_rounded;
+      case 'Son':
+        return Icons.person_rounded;
+      case 'Daughter':
+        return Icons.person_rounded;
+      case 'Spouse':
+        return Icons.favorite_rounded;
+      case 'Caregiver':
+        return Icons.medical_services_rounded;
+      case 'Doctor':
+        return Icons.local_hospital_rounded;
+      case 'Friend':
+        return Icons.people_rounded;
+      default:
+        return Icons.person_outline_rounded;
     }
+  }
+
+  void _showPermissionSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Contacts Permission'),
+        content: const Text(
+          'Contact permission is permanently denied. Please enable it in app settings to add emergency contacts.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              openAppSettings();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4FC3F7),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
   }
 
   // ── Delete Contact ──────────────────────────────
@@ -241,7 +320,9 @@ class _SosScreenState extends State<SosScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: const Text('Remove'),
           ),
@@ -299,7 +380,9 @@ class _SosScreenState extends State<SosScreen> {
                 'Tap to send emergency alert',
                 style: TextStyle(
                   fontSize: 14,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
               ),
 
@@ -323,7 +406,11 @@ class _SosScreenState extends State<SosScreen> {
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.check_circle_rounded, color: Color(0xFF4CAF50), size: 22),
+                        Icon(
+                          Icons.check_circle_rounded,
+                          color: Color(0xFF4CAF50),
+                          size: 22,
+                        ),
                         SizedBox(width: 10),
                         Text(
                           'Alert sent successfully',
@@ -356,7 +443,10 @@ class _SosScreenState extends State<SosScreen> {
                     TextButton.icon(
                       onPressed: _pickContact,
                       icon: const Icon(Icons.add_rounded, size: 20),
-                      label: const Text('Add', style: TextStyle(fontWeight: FontWeight.w600)),
+                      label: const Text(
+                        'Add',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
                     ),
                 ],
               ),
@@ -373,7 +463,10 @@ class _SosScreenState extends State<SosScreen> {
               else if (contacts.isEmpty)
                 _buildEmptyState()
               else
-                ...List.generate(contacts.length, (i) => _buildContactCard(contacts[i], i)),
+                ...List.generate(
+                  contacts.length,
+                  (i) => _buildContactCard(contacts[i], i),
+                ),
 
               // Big Add Button at bottom
               if (!_loading && contacts.length < 5) ...[
@@ -386,12 +479,20 @@ class _SosScreenState extends State<SosScreen> {
                     icon: const Icon(Icons.person_add_rounded, size: 22),
                     label: const Text(
                       'Add Emergency Contact',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFF4FC3F7),
-                      side: const BorderSide(color: Color(0xFF4FC3F7), width: 2),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      side: const BorderSide(
+                        color: Color(0xFF4FC3F7),
+                        width: 2,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
                   ),
                 ),
@@ -407,7 +508,9 @@ class _SosScreenState extends State<SosScreen> {
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Column(
@@ -423,7 +526,9 @@ class _SosScreenState extends State<SosScreen> {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.5),
             ),
           ),
           const SizedBox(height: 6),
@@ -432,7 +537,9 @@ class _SosScreenState extends State<SosScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 14,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.35),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.35),
             ),
           ),
         ],
@@ -472,7 +579,9 @@ class _SosScreenState extends State<SosScreen> {
           return await showDialog<bool>(
             context: context,
             builder: (ctx) => AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
               title: const Text('Remove Contact'),
               content: Text('Remove ${contact.name}?'),
               actions: [
@@ -497,10 +606,14 @@ class _SosScreenState extends State<SosScreen> {
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            color: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.08),
+              color: Theme.of(
+                context,
+              ).colorScheme.outline.withValues(alpha: 0.08),
             ),
           ),
           child: Row(
@@ -514,7 +627,9 @@ class _SosScreenState extends State<SosScreen> {
                 ),
                 child: Center(
                   child: Text(
-                    contact.name.isNotEmpty ? contact.name[0].toUpperCase() : '?',
+                    contact.name.isNotEmpty
+                        ? contact.name[0].toUpperCase()
+                        : '?',
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
@@ -530,14 +645,19 @@ class _SosScreenState extends State<SosScreen> {
                   children: [
                     Text(
                       contact.name,
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       '${contact.relationship} · ${contact.phone}',
                       style: TextStyle(
                         fontSize: 13,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.5),
                       ),
                     ),
                   ],
@@ -547,7 +667,9 @@ class _SosScreenState extends State<SosScreen> {
                 onPressed: () => _deleteContact(contact),
                 icon: Icon(
                   Icons.close_rounded,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.3),
                   size: 20,
                 ),
                 tooltip: 'Remove',
