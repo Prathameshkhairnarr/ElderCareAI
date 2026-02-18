@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/api_config.dart';
 
 /// Represents the currently logged-in user.
 class UserProfile {
@@ -63,8 +64,7 @@ class AuthService {
   // 🔴 PHYSICAL DEVICE: Your Phone & PC must be on SAME Wi-Fi. Turn off Mobile Data (5G).
   // Run 'ipconfig' to find PC IP. If fails, use Emulator.
   // 🔴 EMULATOR CONFIG: Use 10.0.2.2 for Android Emulator
-  static const _baseUrl = 'http://10.0.2.2:8001';
-  // static const _baseUrl = 'http://10.0.2.2:8001'; // EMULATOR ONLY
+  static const _baseUrl = ApiConfig.baseUrl;
 
   static const _tokenKey = 'jwt_token';
   static const _userKey = 'user_data';
@@ -155,7 +155,7 @@ class AuthService {
       }
     } on http.ClientException catch (_) {
       throw Exception(
-        'Cannot reach server. Use IO address for Emulator (10.0.2.2) or Local IP for Device.',
+        'Cannot reach server. Please check your internet connection.',
       );
     } catch (e) {
       if (e is Exception) rethrow;

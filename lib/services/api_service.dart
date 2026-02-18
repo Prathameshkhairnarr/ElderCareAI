@@ -4,6 +4,7 @@ import '../models/risk_model.dart';
 import '../models/sms_model.dart';
 import '../models/guardian_model.dart';
 import '../models/alert_model.dart';
+import '../config/api_config.dart';
 import 'auth_service.dart';
 
 class ApiService {
@@ -12,8 +13,7 @@ class ApiService {
   factory ApiService() => _instance;
   ApiService._internal();
 
-  static const _baseUrl = 'http://10.0.2.2:8001'; // Android Emulator
-  // static const _baseUrl = 'http://10.0.2.2:8000'; // Android emulator
+  static const _baseUrl = ApiConfig.baseUrl;
 
   final _auth = AuthService();
 

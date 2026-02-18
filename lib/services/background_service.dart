@@ -8,15 +8,13 @@ import 'package:flutter_background_service_android/flutter_background_service_an
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/api_config.dart';
 
 // Notification Channel ID
 const String notificationChannelId = 'elder_care_alerts';
 const int notificationId = 888;
 
-// 🔴 EMULATOR CONFIG: Use 10.0.2.2 for Android Emulator
-// 🔴 PHYSICAL DEVICE: Your Phone & PC must be on SAME Wi-Fi. Turn off Mobile Data.
-// Run 'ipconfig' to find PC IP. If fails, use Emulator.
-const String _baseUrl = 'http://10.0.2.2:8001';
+const String _baseUrl = ApiConfig.baseUrl;
 
 /// Entry point for the background service
 @pragma('vm:entry-point')
@@ -54,7 +52,7 @@ void onStart(ServiceInstance service) async {
     service.stopSelf();
   });
 
-// ── REMOVED TELEPHONY LISTENER ──
+  // ── REMOVED TELEPHONY LISTENER ──
   // Listen for SMS
   /*
   Telephony.instance.listenIncomingSms(
@@ -143,8 +141,6 @@ void _showNotification(String title, String body, bool isScam) async {
   );
 }
 
-
-
 Future<void> _createNotificationChannel() async {
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
@@ -158,7 +154,8 @@ Future<void> _createNotificationChannel() async {
 
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
+        AndroidFlutterLocalNotificationsPlugin
+      >()
       ?.createNotificationChannel(channel);
 }
 

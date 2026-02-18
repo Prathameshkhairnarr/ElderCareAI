@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/call_models.dart';
 import '../utils/phone_hasher.dart';
+import '../config/api_config.dart';
 import 'auth_service.dart';
 
 /// Call reputation service for scam detection.
@@ -13,7 +14,7 @@ class ReputationService {
   factory ReputationService() => _instance;
   ReputationService._internal();
 
-  static const _baseUrl = 'http://10.0.2.2:8001'; // Android Emulator
+  static const _baseUrl = ApiConfig.baseUrl;
   final _auth = AuthService();
 
   Map<String, String> get _headers => {
