@@ -13,6 +13,7 @@ import 'health_monitor_screen.dart';
 import 'call_protection_screen.dart';
 import 'alerts_history_screen.dart';
 import 'my_health_screen.dart';
+import 'guardian_setup_screen.dart';
 
 import 'settings/settings_screen.dart';
 
@@ -394,26 +395,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           },
         ),
       );
-    } else if (user?.role.name == 'caregiver') {
-      base.add(
-        _DashCardData(
-          icon: Icons.people_rounded,
-          title: 'My Patients',
-          subtitle: 'View assigned elder profiles',
-          color: const Color(0xFF42A5F5),
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Patients view coming soon'),
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            );
-          },
-        ),
-      );
     } else {
       base.add(
         _DashCardData(
@@ -427,6 +408,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       );
     }
+
+    // Guardian Features
+    base.add(
+      _DashCardData(
+        icon: Icons.shield_rounded,
+        title: 'Guardian Setup',
+        subtitle: 'Add trusted contacts',
+        color: const Color(0xFF8D6E63),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const GuardianSetupScreen()),
+        ),
+      ),
+    );
 
     // DEBUG: Simulate SOS Button (Windows Testing)
     base.add(

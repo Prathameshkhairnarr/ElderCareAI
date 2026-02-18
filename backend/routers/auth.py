@@ -11,6 +11,7 @@ from database.engine import get_db
 from database.models import User
 from schemas.schemas import RegisterRequest, TokenResponse, UserOut
 from services.auth_service import hash_password, verify_password, create_access_token
+from utils.phone_utils import normalize_phone
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -18,16 +19,17 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 def register(body: RegisterRequest, db: Session = Depends(get_db)):
     """Register a new user and return a JWT token."""
-    existing = db.query(User).filter(User.phone == body.phone).first()
+    normalized_phone = normalize_phone(body.phone)
+    existing = db.query(User).filter(User.phone == normalized_phone).first()
     if existing:
         raise HTTPException(status_code=400, detail="Phone number already registered")
 
-    print(f"🔵 Registering user: {body.name} ({body.phone})")
+    print(f"🔵 Registering user: {body.name} ({normalized_phone})")
 
     try:
         user = User(
             name=body.name,
-            phone=body.phone,
+            phone=normalized_phone,
             password_hash=hash_password(body.password),
             role=body.role,
             is_active=True,
@@ -60,8 +62,8 @@ def login(
     db: Session = Depends(get_db),
 ):
     """OAuth2 compatible login with structured response."""
-
-    user = db.query(User).filter(User.phone == form_data.username).first()
+    normalized_phone = normalize_phone(form_data.username)
+    user = db.query(User).filter(User.phone == normalized_phone).first()
 
     if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(

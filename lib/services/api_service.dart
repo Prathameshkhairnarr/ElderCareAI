@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/risk_model.dart';
 import '../models/sms_model.dart';
+import '../models/guardian_model.dart';
+import '../models/alert_model.dart';
 import 'auth_service.dart';
 
 class ApiService {
@@ -267,10 +269,14 @@ class ApiService {
   }
 
   // ── Alerts ───────────────────────────────────────────
-  Future<List<dynamic>?> getAlerts() async {
+  Future<List<dynamic>?> getAlerts({bool? isRead}) async {
     try {
+      String query = '';
+      if (isRead != null) {
+        query = '?is_read=$isRead';
+      }
       final response = await http.get(
-        Uri.parse('$_baseUrl/alerts'),
+        Uri.parse('$_baseUrl/alerts$query'),
         headers: _headers,
       );
       if (response.statusCode == 200) {
@@ -280,6 +286,112 @@ class ApiService {
     } catch (e) {
       print("Get Alerts Error: $e");
       return null;
+    }
+  }
+
+  Future<List<AlertModel>> getElderAlerts(int elderId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/guardian/elder/$elderId/alerts'),
+        headers: _headers,
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((e) => AlertModel.fromJson(e)).toList();
+      }
+      return [];
+    } catch (e) {
+      print("Get Elder Alerts Error: $e");
+      return [];
+    }
+  }
+
+  Future<bool> markAlertRead(int alertId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/alerts/$alertId/read'),
+        headers: _headers,
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print("Mark Alert Read Error: $e");
+      return false;
+    }
+  }
+
+  // ── Guardian Connect ─────────────────────────────────
+  Future<List<GuardianModel>> getGuardians() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/guardians'),
+        headers: _headers,
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((e) => GuardianModel.fromJson(e)).toList();
+      }
+      return [];
+    } catch (e) {
+      print("Get Guardians Error: $e");
+      return [];
+    }
+  }
+
+  Future<GuardianModel?> addGuardian(
+    String name,
+    String phone, {
+    String? email,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/guardians'),
+        headers: _headers,
+        body: jsonEncode({
+          'name': name,
+          'phone': phone,
+          'email': email,
+          'is_primary': false,
+        }),
+      );
+      if (response.statusCode == 201) {
+        return GuardianModel.fromJson(jsonDecode(response.body));
+      }
+      print("Add Guardian Failed: ${response.body}");
+      return null;
+    } catch (e) {
+      print("Add Guardian Error: $e");
+      return null;
+    }
+  }
+
+  Future<bool> deleteGuardian(int id) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$_baseUrl/guardians/$id'),
+        headers: _headers,
+      );
+      return response.statusCode == 204;
+    } catch (e) {
+      print("Delete Guardian Error: $e");
+      return false;
+    }
+  }
+
+  Future<List<ElderStatsModel>> getGuardianDashboard() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/guardian/dashboard'),
+        headers: _headers,
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List<dynamic> elders = data['elders'];
+        return elders.map((e) => ElderStatsModel.fromJson(e)).toList();
+      }
+      return [];
+    } catch (e) {
+      print("Get Guardian Dashboard Error: $e");
+      return [];
     }
   }
 }

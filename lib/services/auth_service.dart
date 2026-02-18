@@ -52,7 +52,7 @@ class UserProfile {
   };
 }
 
-enum UserRole { elder, caregiver, admin }
+enum UserRole { elder, guardian, admin }
 
 class AuthService {
   // ── Singleton ────────────────────────────────────────
@@ -76,7 +76,7 @@ class AuthService {
   String? get token => _token;
   bool get isLoggedIn => _token != null;
 
-  String _normalizePhone(String phone) {
+  static String normalizePhone(String phone) {
     // Remove all non-digits
     final digits = phone.replaceAll(RegExp(r'[^\d]'), '');
     // Take last 10 digits if longer (e.g. 919876543210 -> 9876543210)
@@ -104,7 +104,7 @@ class AuthService {
     required String role,
   }) async {
     try {
-      final normalizedPhone = _normalizePhone(phone);
+      final normalizedPhone = AuthService.normalizePhone(phone);
       print('🔵 Attempting registration for: $name ($normalizedPhone)');
       print('🔵 URL: $_baseUrl/auth/register');
 
@@ -166,7 +166,7 @@ class AuthService {
   // ── Login ────────────────────────────────────────────
   Future<UserProfile> login(String phone, String pin) async {
     try {
-      final normalizedPhone = _normalizePhone(phone);
+      final normalizedPhone = AuthService.normalizePhone(phone);
       print('🔵 Attempting login for: $normalizedPhone original: $phone');
       print('🔵 URL: $_baseUrl/auth/login');
 

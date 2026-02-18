@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../widgets/page_transition.dart';
 import 'dashboard_screen.dart';
+import 'guardian_dashboard_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -23,7 +24,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _error;
 
   // Simple role list
-  final List<String> _roles = ['elder', 'caregiver'];
+  final List<String> _roles = ['elder', 'guardian'];
 
   @override
   void dispose() {
@@ -56,10 +57,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
 
       if (success) {
-        Navigator.of(context).pushAndRemoveUntil(
-          PageTransition(page: const DashboardScreen()),
-          (route) => false,
-        );
+        if (_selectedRole == 'guardian') {
+          Navigator.of(context).pushAndRemoveUntil(
+            PageTransition(page: const GuardianDashboardScreen()),
+            (route) => false,
+          );
+        } else {
+          Navigator.of(context).pushAndRemoveUntil(
+            PageTransition(page: const DashboardScreen()),
+            (route) => false,
+          );
+        }
       } else {
         setState(() {
           _isLoading = false;

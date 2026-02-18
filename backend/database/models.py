@@ -20,7 +20,7 @@ class User(Base):
     name = Column(String(120), nullable=False)
     phone = Column(String(20), unique=True, nullable=False, index=True)
     password_hash = Column(String(256), nullable=False)
-    role = Column(String(20), nullable=False, default="elder")  # elder | caregiver | admin
+    role = Column(String(20), nullable=False, default="elder")  # elder | guardian | admin
     is_active = Column(Boolean, default=True)
     is_phone_verified = Column(Boolean, default=True)  # True by default (no OTP provider)
     created_at = Column(DateTime, default=_utcnow)
@@ -35,6 +35,7 @@ class User(Base):
     risk_state = sqlalchemy_relationship("RiskState", back_populates="user", uselist=False)
     health_vitals = sqlalchemy_relationship("HealthVital", back_populates="user")
     health_profile = sqlalchemy_relationship("HealthProfile", back_populates="user", uselist=False)
+    guardians = sqlalchemy_relationship("Guardian", back_populates="user")
 
 
 class HealthProfile(Base):
@@ -96,6 +97,7 @@ class Alert(Base):
     title = Column(String(200), nullable=False)
     details = Column(Text, default="")
     severity = Column(String(20), default="medium")    # low | medium | high | critical
+    is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=_utcnow)
 
     user = sqlalchemy_relationship("User", back_populates="alerts")
@@ -174,4 +176,18 @@ class HealthVital(Base):
     recorded_at = Column(DateTime, default=_utcnow)
 
     user = sqlalchemy_relationship("User", back_populates="health_vitals")
+
+
+class Guardian(Base):
+    __tablename__ = "guardians"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String(100), nullable=False)
+    phone = Column(String(20), nullable=False, index=True)
+    email = Column(String(100), nullable=True)
+    is_primary = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=_utcnow)
+
+    user = sqlalchemy_relationship("User", back_populates="guardians")
 

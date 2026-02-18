@@ -12,7 +12,7 @@ class RegisterRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     phone: str = Field(..., min_length=10, max_length=20)
     password: str = Field(..., min_length=4)
-    role: str = Field(default="elder", pattern="^(elder|caregiver|admin)$")
+    role: str = Field(default="elder", pattern="^(elder|guardian|admin)$")
 
 
 class LoginRequest(BaseModel):
@@ -94,6 +94,7 @@ class AlertOut(BaseModel):
     title: str
     details: str
     severity: str
+    is_read: bool
     created_at: datetime
 
     class Config:

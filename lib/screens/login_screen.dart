@@ -3,6 +3,7 @@ import '../services/auth_service.dart';
 import '../widgets/page_transition.dart';
 import 'dashboard_screen.dart';
 import 'register_screen.dart';
+import 'guardian_dashboard_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -27,15 +28,24 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      await AuthService().login(
+      final user = await AuthService().login(
         _phoneController.text.trim(),
         _pinController.text.trim(),
       );
 
       if (!mounted) return;
-      Navigator.of(
-        context,
-      ).pushReplacement(PageTransition(page: const DashboardScreen()));
+
+      if (user.role == UserRole.guardian) {
+        Navigator.of(context).pushAndRemoveUntil(
+          PageTransition(page: const GuardianDashboardScreen()),
+          (route) => false,
+        );
+      } else {
+        Navigator.of(context).pushAndRemoveUntil(
+          PageTransition(page: const DashboardScreen()),
+          (route) => false,
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {

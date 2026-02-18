@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from database.engine import engine, Base
-from routers import auth, risk, sms, voice, alerts, sos, call_protection, contacts, health
+from routers import auth, risk, sms, voice, alerts, sos, call_protection, contacts, health, guardian
 
 # Create all tables
 Base.metadata.create_all(bind=engine)
@@ -51,6 +51,7 @@ app.include_router(risk.router, prefix="", tags=["Risk Score"])
 app.include_router(alerts.router, prefix="", tags=["Alerts"])
 app.include_router(sos.router, prefix="", tags=["SOS"])  # /sos at root
 app.include_router(call_protection.router, prefix="/call", tags=["Call Protection"])
+app.include_router(guardian.router, prefix="", tags=["Guardian"])
 
 
 @app.get("/", tags=["Health"])

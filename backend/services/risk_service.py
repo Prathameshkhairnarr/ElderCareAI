@@ -141,7 +141,29 @@ def add_risk_entry(db: Session, user_id: int, source_type: str, source_id: str, 
             severity="high",
         )
         db.add(alert)
-    
+
+    # ── High Risk Score Alert ─────────────────────
+    if state.current_score >= 75:
+        # Check if we already have an unread high_risk alert
+        existing_alert = (
+            db.query(Alert)
+            .filter(
+                Alert.user_id == user_id,
+                Alert.alert_type == "high_risk",
+                Alert.is_read == False
+            )
+            .first()
+        )
+        if not existing_alert:
+            high_risk_alert = Alert(
+                user_id=user_id,
+                alert_type="high_risk",
+                title="Risk Score Critical",
+                details=f"User risk score has reached {state.current_score}/100. Immediate attention required.",
+                severity="critical",
+            )
+            db.add(high_risk_alert)
+
     db.commit()
 
 
