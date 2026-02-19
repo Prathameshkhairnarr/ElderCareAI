@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:permission_handler/permission_handler.dart';
-import '../services/api_service.dart';
 import '../services/emergency_service.dart';
 import '../widgets/sos_button.dart';
 
@@ -13,7 +12,6 @@ class SosScreen extends StatefulWidget {
 }
 
 class _SosScreenState extends State<SosScreen> {
-  final _api = ApiService();
   final _emergencyService = EmergencyService();
   bool _triggered = false;
   bool _loading = true;
@@ -97,36 +95,51 @@ class _SosScreenState extends State<SosScreen> {
   }
 
   Future<void> _triggerSos() async {
-    // Use EmergencyService for full SOS flow (SMS + backend)
-    await _emergencyService.triggerSOS();
+    // Check cooldown first
+    final cd = _emergencyService.cooldownRemaining;
+    if (cd > 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('⏳ Please wait ${cd}s before sending again'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
+      return;
+    }
 
-    // Also directly sync with backend
-    final success = await _api.triggerSos();
+    // EmergencyService handles: location → SMS → backend sync → offline queue
+    final success = await _emergencyService.triggerSOS();
+
     if (!mounted) return;
-    setState(
-      () => _triggered = success || _emergencyService.lastStatus != null,
-    );
+    setState(() => _triggered = success);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
             Icon(
-              _triggered ? Icons.check_circle_rounded : Icons.error_rounded,
+              success ? Icons.check_circle_rounded : Icons.error_rounded,
               color: Colors.white,
               size: 20,
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                _triggered
-                    ? 'SOS alert sent to ${_emergencyService.contacts.length} contacts!'
-                    : 'Failed to send SOS. Please try again.',
+                _emergencyService.lastStatus ??
+                    (success
+                        ? 'SOS alert sent!'
+                        : 'Failed to send SOS. Please try again.'),
               ),
             ),
           ],
         ),
-        backgroundColor: _triggered ? const Color(0xFF4CAF50) : Colors.red,
+        backgroundColor: success ? const Color(0xFF4CAF50) : Colors.red,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),

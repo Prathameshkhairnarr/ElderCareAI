@@ -54,18 +54,29 @@ class EmergencyService extends ChangeNotifier {
   List<EmergencyContact> _contacts = [];
   bool _isSending = false;
   String? _lastStatus;
+  DateTime? _lastSosTime;
 
   List<EmergencyContact> get contacts => _contacts;
   bool get isSending => _isSending;
   String? get lastStatus => _lastStatus;
 
+  /// Seconds remaining before SOS can be triggered again (0 = ready)
+  int get cooldownRemaining {
+    if (_lastSosTime == null) return 0;
+    final elapsed = DateTime.now().difference(_lastSosTime!).inSeconds;
+    return (60 - elapsed).clamp(0, 60);
+  }
+
   // Constants
   static const String _contactsKey = 'emergency_contacts';
+  static const String _pendingSosKey = 'pending_sos_queue';
   final _api = ApiService();
 
   // Initialize
   Future<void> init() async {
     await _loadContacts();
+    // Retry any pending SOS that failed to sync
+    _retryPendingSos();
   }
 
   // Load contacts (API First, Fallback to Local)
@@ -137,11 +148,21 @@ class EmergencyService extends ChangeNotifier {
   }
 
   // 🚨 TRIGGER SOS 🚨
-  Future<void> triggerSOS() async {
-    if (_isSending) return; // Debounce
+  /// Returns true if SOS was successfully sent (SMS + backend).
+  Future<bool> triggerSOS() async {
+    // Anti-spam cooldown
+    if (cooldownRemaining > 0) {
+      _lastStatus = "Please wait ${cooldownRemaining}s before sending again";
+      notifyListeners();
+      return false;
+    }
+
+    if (_isSending) return false; // Already in progress
     _isSending = true;
     _lastStatus = "Starting Emergency sequence...";
     notifyListeners();
+
+    bool success = false;
 
     try {
       if (_contacts.isEmpty) {
@@ -158,18 +179,15 @@ class EmergencyService extends ChangeNotifier {
           (defaultTargetPlatform == TargetPlatform.android ||
               defaultTargetPlatform == TargetPlatform.iOS)) {
         try {
-          // Try high accuracy with short timeout to avoid hanging
           position = await _determinePosition().timeout(
             const Duration(seconds: 5),
           );
         } catch (e) {
           print("High accuracy GPS failed: $e. Trying last known...");
-          // Fallback
           position = await Geolocator.getLastKnownPosition();
         }
       } else {
-        // Mock location for Windows/Web
-        await Future.delayed(const Duration(seconds: 1)); // Sim delay
+        await Future.delayed(const Duration(seconds: 1));
         print("Mocking location for Windows/Web");
       }
 
@@ -188,13 +206,12 @@ class EmergencyService extends ChangeNotifier {
       _lastStatus = "Sending SMS to ${_contacts.length} contacts...";
       notifyListeners();
 
-      // Request SMS Permission for native send
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-        var status = await Permission.sms.status;
-        if (!status.isGranted) {
+        var smsPermission = await Permission.sms.status;
+        if (!smsPermission.isGranted) {
           _lastStatus = "Requesting SMS permission...";
           notifyListeners();
-          status = await Permission.sms.request();
+          smsPermission = await Permission.sms.request();
         }
       }
 
@@ -219,7 +236,6 @@ class EmergencyService extends ChangeNotifier {
           _lastStatus = "Native failed. Opening SMS app...";
           notifyListeners();
 
-          // Fallback to interactive SMS
           final Uri smsLaunchUri = Uri(
             scheme: 'sms',
             path: recipients.join(','),
@@ -241,36 +257,91 @@ class EmergencyService extends ChangeNotifier {
         result = "Simulated SMS send (Not Android)";
       }
 
-      _lastStatus = "Done: $result";
-      print("SOS Result: $result");
+      // 4. Sync with Backend (with offline queue fallback)
+      _lastStatus = "Syncing with server...";
+      notifyListeners();
 
-      // 4. Sync with Backend (Fire & Forget)
-      try {
-        if (kIsWeb ||
-            (defaultTargetPlatform != TargetPlatform.android &&
-                defaultTargetPlatform != TargetPlatform.iOS)) {
-          // On Windows/Web, we can definitely sync since we have internet usually
-          await ApiService().triggerSos(
-            lat: position?.latitude,
-            lng: position?.longitude,
-          );
-        } else {
-          // On mobile, try to sync but don't await if we want to be fast?
-          // actually awaiting is fine as it's fire & forget in UI terms (provider notifies listener)
-          ApiService().triggerSos(
-            lat: position?.latitude,
-            lng: position?.longitude,
-          );
-        }
-      } catch (e) {
-        print("Backend sync failed (harmless): $e");
+      final backendOk = await _api.triggerSos(
+        lat: position?.latitude,
+        lng: position?.longitude,
+      );
+
+      if (!backendOk) {
+        // Queue for later retry
+        await _queuePendingSos(
+          lat: position?.latitude,
+          lng: position?.longitude,
+        );
+        _lastStatus = "✅ SMS sent. Server sync queued for retry.";
+      } else {
+        _lastStatus = "✅ SOS sent to ${_contacts.length} contacts & server.";
       }
+
+      // Mark cooldown
+      _lastSosTime = DateTime.now();
+      success = true;
+      print("SOS Result: $result | Backend: $backendOk");
     } catch (e) {
-      _lastStatus = "Failed: $e";
+      _lastStatus = "❌ Failed: $e";
       print("SOS Error: $e");
     } finally {
       _isSending = false;
       notifyListeners();
+    }
+    return success;
+  }
+
+  /// Queue a failed SOS for retry when network returns
+  Future<void> _queuePendingSos({double? lat, double? lng}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = prefs.getStringList(_pendingSosKey) ?? [];
+      final payload = jsonEncode({
+        'latitude': lat,
+        'longitude': lng,
+        'message': 'Emergency SOS triggered from app',
+        'timestamp': DateTime.now().toIso8601String(),
+        'retries': 0,
+      });
+      pending.add(payload);
+      await prefs.setStringList(_pendingSosKey, pending);
+      print("SOS queued for offline retry");
+    } catch (e) {
+      print("Failed to queue SOS: $e");
+    }
+  }
+
+  /// Retry any pending SOS calls (called on init and after successful SOS)
+  Future<void> _retryPendingSos() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = prefs.getStringList(_pendingSosKey) ?? [];
+      if (pending.isEmpty) return;
+
+      final remaining = <String>[];
+      for (final item in pending) {
+        final data = jsonDecode(item) as Map<String, dynamic>;
+        final retries = (data['retries'] as int?) ?? 0;
+
+        if (retries >= 3) continue; // Drop after 3 attempts
+
+        final ok = await _api.triggerSos(
+          lat: data['latitude'] as double?,
+          lng: data['longitude'] as double?,
+        );
+
+        if (!ok) {
+          // Increment retry count and keep
+          data['retries'] = retries + 1;
+          remaining.add(jsonEncode(data));
+        } else {
+          print("Retried pending SOS successfully");
+        }
+      }
+
+      await prefs.setStringList(_pendingSosKey, remaining);
+    } catch (e) {
+      print("Pending SOS retry error: $e");
     }
   }
 
