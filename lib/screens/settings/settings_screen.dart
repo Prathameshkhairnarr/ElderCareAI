@@ -407,6 +407,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               color: const Color(0xFFEF5350),
               onChanged: (v) => _settings.toggleVoiceFeedback(v),
             ),
+            _buildToggleTile(
+              icon: Icons.vibration_rounded,
+              title: 'Shake to SOS',
+              subtitle: 'Shake phone vigorously to trigger SOS',
+              value: _settings.shakeSosEnabled,
+              color: const Color(0xFFFF7043),
+              onChanged: (v) => _settings.toggleShakeSos(v),
+            ),
             const SizedBox(height: 24),
 
             // ── About ──────────────────────────────

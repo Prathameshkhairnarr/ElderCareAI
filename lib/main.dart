@@ -4,6 +4,7 @@ import 'services/auth_service.dart';
 import 'services/emergency_service.dart';
 import 'services/settings_service.dart';
 import 'services/background_service.dart';
+import 'services/shake_detector_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'app_theme.dart';
 import 'app_routes.dart';
@@ -21,6 +22,13 @@ void main() async {
     await EmergencyService().init();
   } catch (e) {
     print("EmergencyService Init Failed (Non-critical): $e");
+  }
+
+  // Start shake-to-SOS detector (depends on EmergencyService being init'd)
+  try {
+    ShakeDetectorService().start();
+  } catch (e) {
+    print("ShakeDetector Init Failed (Non-critical): $e");
   }
 
   try {
