@@ -83,6 +83,8 @@ class RiskResponse(BaseModel):
     score: int
     level: str
     details: str
+    active_threats: int = 0
+    last_scam_at: Optional[datetime] = None
     is_vulnerable: bool = False
 
 

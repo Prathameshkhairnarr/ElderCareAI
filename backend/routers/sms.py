@@ -119,7 +119,7 @@ def analyze_sms_endpoint(
         db.add(alert)
     
     # ── Update Active Risk Score ──
-    add_risk_entry(db, current_user.id, "sms", content_hash, result.is_scam)
+    add_risk_entry(db, current_user.id, "sms", content_hash, result.is_scam, confidence=result.confidence)
 
     db.commit()
     db.refresh(record)

@@ -1,72 +1,77 @@
 """
-Dynamic risk score calculation and lifecycle management.
-Uses RiskEntry and RiskState for active/resolved threat tracking.
+Dynamic Risk Intelligence Engine — backend service.
+
+Unified scoring model:
+  - Backend is the single source of truth
+  - Scam SMS, SOS, and call events increase score
+  - Safe SMS and time-based decay decrease score
+  - Spike detection for burst of scams
+  - Smooth hourly decay, NOT coarse daily decay
 """
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from database.models import RiskEntry, RiskState, User, HealthProfile, Alert
 
-# Constants
-RISK_CONTRIBUTION_SMS = 15
-RISK_CONTRIBUTION_CALL = 20
-RISK_DECAY_DAILY = 5
-SAFE_THRESHOLD_DAYS = 7
+
+# ── Event Weights ──
+W_SMS = 15        # base points per scam SMS
+W_SOS = 25        # points per SOS trigger
+W_CALL = 20       # points per scam call (future)
+D_SAFE = 1        # points removed per safe SMS
+HOURLY_DECAY = 2.0   # points per hour since last scam
+SAFE_RESET_DAYS = 7  # full reset after this many clean days
+
+# ── Spike Detection ──
+SPIKE_WINDOW_MIN = 10   # minutes
+SPIKE_THRESHOLD = 3     # scams in window to trigger spike
+SPIKE_MULTIPLIER = 1.5  # bonus multiplier during spike
 
 
 def get_current_risk(user_id: int, db: Session) -> dict:
     """
-    Get the current risk state. If missing, calculate from scratch.
+    Get the current risk state with hourly decay applied.
     Integrates health profile data for vulnerability detection.
     """
-    state = db.query(RiskState).filter(RiskState.user_id == user_id).first()
-    
-    if not state:
-        # Initialize if not exists
-        state = RiskState(user_id=user_id, current_score=0)
-        db.add(state)
-        db.commit()
-        db.refresh(state)
+    state = _get_or_create_state(user_id, db)
 
-    # Check for decay opportunity
+    # Apply smooth hourly decay
     _apply_decay(state, db)
 
-    score = min(state.current_score, 100)
-    
+    score = min(max(state.current_score, 0), 100)
+
     # ── Health profile integration ─────────────────
     is_vulnerable = False
+    display_score = score
     health_profile = db.query(HealthProfile).filter(
         HealthProfile.user_id == user_id
     ).first()
 
     if health_profile:
-        # Age-based sensitivity: elderly users get +5 to effective score display
         if health_profile.age and health_profile.age > 65:
-            score = min(score + 5, 100)
-        # Vulnerability flag: medical conditions present
+            display_score = min(score + 5, 100)
         if health_profile.medical_conditions and health_profile.medical_conditions.strip():
             is_vulnerable = True
 
     # Determine level
-    if score < 10:
+    if display_score < 10:
         level = "Safe"
-    elif score < 40:
+    elif display_score < 40:
         level = "Low"
-    elif score < 70:
+    elif display_score < 70:
         level = "Moderate"
     else:
         level = "High"
 
-    # Get active active_threats count
     active_threats = db.query(RiskEntry).filter(
-        RiskEntry.user_id == user_id, 
+        RiskEntry.user_id == user_id,
         RiskEntry.status == "ACTIVE"
     ).count()
 
-    details = _generate_details(score, active_threats, is_vulnerable)
+    details = _generate_details(display_score, active_threats, is_vulnerable)
 
     return {
-        "score": score,
+        "score": display_score,
         "level": level,
         "details": details,
         "active_threats": active_threats,
@@ -75,48 +80,225 @@ def get_current_risk(user_id: int, db: Session) -> dict:
     }
 
 
-def add_risk_entry(db: Session, user_id: int, source_type: str, source_id: str, is_scam: bool):
+def add_risk_entry(
+    db: Session,
+    user_id: int,
+    source_type: str,
+    source_id: str,
+    is_scam: bool,
+    confidence: int = 50,
+):
     """
-    Called when a new analysis completes.
-    If SCAM: Creates a new ACTIVE risk entry and increases score.
-    If SAFE: Does nothing to score (unless we implement 'good behavior' bonus later).
-    Idempotency: Checks if this specific source_id (hash) is already ACTIVE.
+    Record a threat event and update the rolling risk score.
+
+    - Scam → increase score (weighted by confidence, spike-aware)
+    - Safe  → decrease score by D_SAFE
+    - Idempotent via source_id dedup
     """
+    state = _get_or_create_state(user_id, db)
+
     if not is_scam:
+        # Safe event → slow decay
+        state.current_score = max(0, state.current_score - D_SAFE)
+        db.commit()
         return
 
-    # Check existence
+    # ── Idempotency check ──
     existing = db.query(RiskEntry).filter(
         RiskEntry.user_id == user_id,
         RiskEntry.source_id == source_id
     ).first()
-
     if existing:
-        # Already tracked. If it was resolved, do we re-activate? 
-        # For now, NO. Once resolved, stays resolved to avoid annoyance.
         return
 
-    # Create new entry
-    contribution = RISK_CONTRIBUTION_CALL if source_type == 'call' else RISK_CONTRIBUTION_SMS
+    # ── Calculate contribution ──
+    base_weight = W_CALL if source_type == "call" else W_SMS
+    contribution = base_weight * max(0.5, min(confidence / 100.0, 1.0))
+
+    # Spike detection
+    if _is_spike(user_id, db):
+        contribution *= SPIKE_MULTIPLIER
+
+    # ── Create risk entry ──
     new_entry = RiskEntry(
         user_id=user_id,
         source_type=source_type,
         source_id=source_id,
         status="ACTIVE",
-        risk_score_contribution=contribution
+        risk_score_contribution=int(contribution)
     )
     db.add(new_entry)
 
-    # Update State
+    # ── Update state ──
+    state.current_score = min(int(state.current_score + contribution), 100)
+    state.last_scam_at = datetime.now(timezone.utc)
+
+    # ── Vulnerability-aware alert ──
+    _check_vulnerability_alert(db, user_id, source_type)
+
+    # ── High-risk score alert ──
+    if state.current_score >= 75:
+        _check_high_risk_alert(db, user_id, state.current_score)
+
+    db.commit()
+
+
+def add_sos_risk(db: Session, user_id: int, sos_id: int):
+    """
+    Record an SOS event as a risk contribution.
+    SOS = highest weight event (W_SOS = 25).
+    """
+    source_id = f"sos_{sos_id}"
+
+    # Idempotent
+    existing = db.query(RiskEntry).filter(
+        RiskEntry.user_id == user_id,
+        RiskEntry.source_id == source_id
+    ).first()
+    if existing:
+        return
+
+    state = _get_or_create_state(user_id, db)
+
+    new_entry = RiskEntry(
+        user_id=user_id,
+        source_type="sos",
+        source_id=source_id,
+        status="ACTIVE",
+        risk_score_contribution=W_SOS
+    )
+    db.add(new_entry)
+
+    state.current_score = min(state.current_score + W_SOS, 100)
+    state.last_scam_at = datetime.now(timezone.utc)
+
+    # SOS always triggers high-risk alert
+    _check_high_risk_alert(db, user_id, state.current_score)
+
+    db.commit()
+
+
+def resolve_risk(db: Session, user_id: int, entry_id: int):
+    """
+    Mark a risk entry as resolved. Decreases score by original contribution.
+    """
+    entry = db.query(RiskEntry).filter(
+        RiskEntry.id == entry_id,
+        RiskEntry.user_id == user_id
+    ).first()
+    if not entry or entry.status != "ACTIVE":
+        return
+
+    entry.status = "RESOLVED"
+    entry.resolved_at = datetime.now(timezone.utc)
+
+    state = db.query(RiskState).filter(RiskState.user_id == user_id).first()
+    if state:
+        state.current_score = max(0, state.current_score - entry.risk_score_contribution)
+
+    db.commit()
+
+
+def decay_all_scores(db: Session):
+    """
+    Background task: apply smooth hourly decay to ALL active risk states.
+    Called periodically by the scheduler (e.g. every hour).
+    """
+    states = db.query(RiskState).filter(RiskState.current_score > 0).all()
+    now = datetime.now(timezone.utc)
+
+    for state in states:
+        if not state.last_scam_at:
+            state.current_score = 0
+            continue
+
+        last_scam = _ensure_utc(state.last_scam_at)
+        diff = now - last_scam
+
+        # Full reset after 7 days clean
+        if diff.days >= SAFE_RESET_DAYS:
+            state.current_score = 0
+            # Auto-resolve all active entries
+            db.query(RiskEntry).filter(
+                RiskEntry.user_id == state.user_id,
+                RiskEntry.status == "ACTIVE"
+            ).update({"status": "DECAYED", "resolved_at": now})
+            continue
+
+        # Smooth hourly decay
+        last_update = _ensure_utc(state.updated_at) if state.updated_at else last_scam
+        hours_since_update = (now - last_update).total_seconds() / 3600.0
+
+        if hours_since_update >= 1.0:
+            decay = hours_since_update * HOURLY_DECAY
+            state.current_score = max(0, int(state.current_score - decay))
+
+    db.commit()
+
+
+# ══════════════════════════════════════════════════════════
+#  PRIVATE HELPERS
+# ══════════════════════════════════════════════════════════
+
+def _get_or_create_state(user_id: int, db: Session) -> RiskState:
+    """Get or initialize a RiskState row for a user."""
     state = db.query(RiskState).filter(RiskState.user_id == user_id).first()
     if not state:
         state = RiskState(user_id=user_id, current_score=0)
         db.add(state)
-    
-    state.current_score = min(state.current_score + contribution, 100)
-    state.last_scam_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(state)
+    return state
 
-    # ── Vulnerability-aware alert ─────────────────
+
+def _apply_decay(state: RiskState, db: Session):
+    """
+    Apply smooth time-based decay when reading the score.
+    This ensures score is always fresh even without the background scheduler.
+    """
+    if state.current_score <= 0:
+        return
+
+    now = datetime.now(timezone.utc)
+
+    if not state.last_scam_at:
+        state.current_score = 0
+        db.commit()
+        return
+
+    last_scam = _ensure_utc(state.last_scam_at)
+    diff = now - last_scam
+
+    # Full reset after 7 days clean
+    if diff.days >= SAFE_RESET_DAYS:
+        state.current_score = 0
+        db.commit()
+        return
+
+    # Hourly decay since last update (not since last scam, to avoid double-decay)
+    if state.updated_at:
+        last_update = _ensure_utc(state.updated_at)
+        hours_since_update = (now - last_update).total_seconds() / 3600.0
+
+        if hours_since_update >= 0.5:  # Min 30 min between decay applications
+            decay = hours_since_update * HOURLY_DECAY
+            state.current_score = max(0, int(state.current_score - decay))
+            db.commit()
+
+
+def _is_spike(user_id: int, db: Session) -> bool:
+    """Check if 3+ scam entries were created in the last 10 minutes."""
+    window_start = datetime.now(timezone.utc) - timedelta(minutes=SPIKE_WINDOW_MIN)
+    recent_count = db.query(RiskEntry).filter(
+        RiskEntry.user_id == user_id,
+        RiskEntry.status == "ACTIVE",
+        RiskEntry.created_at >= window_start
+    ).count()
+    return recent_count >= SPIKE_THRESHOLD
+
+
+def _check_vulnerability_alert(db: Session, user_id: int, source_type: str):
+    """Create alert for vulnerable users (elderly / medical conditions)."""
     health_profile = db.query(HealthProfile).filter(
         HealthProfile.user_id == user_id
     ).first()
@@ -129,7 +311,6 @@ def add_risk_entry(db: Session, user_id: int, source_type: str, source_id: str, 
     )
 
     if is_elderly or has_conditions:
-        # Vulnerable user + scam → high severity alert
         alert = Alert(
             user_id=user_id,
             alert_type="vulnerable_user",
@@ -142,107 +323,47 @@ def add_risk_entry(db: Session, user_id: int, source_type: str, source_id: str, 
         )
         db.add(alert)
 
-    # ── High Risk Score Alert ─────────────────────
-    if state.current_score >= 75:
-        # Check if we already have an unread high_risk alert
-        existing_alert = (
-            db.query(Alert)
-            .filter(
-                Alert.user_id == user_id,
-                Alert.alert_type == "high_risk",
-                Alert.is_read == False
-            )
-            .first()
+
+def _check_high_risk_alert(db: Session, user_id: int, current_score: int):
+    """Create a critical alert if score crosses 75 (deduped)."""
+    existing = (
+        db.query(Alert)
+        .filter(
+            Alert.user_id == user_id,
+            Alert.alert_type == "high_risk",
+            Alert.is_read == False
         )
-        if not existing_alert:
-            high_risk_alert = Alert(
-                user_id=user_id,
-                alert_type="high_risk",
-                title="Risk Score Critical",
-                details=f"User risk score has reached {state.current_score}/100. Immediate attention required.",
-                severity="critical",
-            )
-            db.add(high_risk_alert)
-
-    db.commit()
-
-
-def resolve_risk(db: Session, user_id: int, entry_id: int):
-    """
-    User marks a specific risk as resolved.
-    Decreases score by the original contribution.
-    """
-    entry = db.query(RiskEntry).filter(RiskEntry.id == entry_id, RiskEntry.user_id == user_id).first()
-    if not entry or entry.status != "ACTIVE":
-        return
-
-    entry.status = "RESOLVED"
-    entry.resolved_at = datetime.now(timezone.utc)
-
-    # Update state
-    state = db.query(RiskState).filter(RiskState.user_id == user_id).first()
-    if state:
-        state.current_score = max(0, state.current_score - entry.risk_score_contribution)
-    
-    db.commit()
+        .first()
+    )
+    if not existing:
+        alert = Alert(
+            user_id=user_id,
+            alert_type="high_risk",
+            title="Risk Score Critical",
+            details=f"User risk score has reached {current_score}/100. Immediate attention required.",
+            severity="critical",
+        )
+        db.add(alert)
 
 
-def _apply_decay(state: RiskState, db: Session):
-    """
-    If no scams in last 24h, reduce score slightly.
-    If no scams in 7 days, massive reduction.
-    """
-    if not state.last_scam_at:
-        if state.current_score > 0:
-            state.current_score = 0
-            db.commit()
-        return
-
-    now = datetime.now(timezone.utc)
-    # Ensure timezone awareness
-    if state.last_scam_at.tzinfo is None:
-        last_scam = state.last_scam_at.replace(tzinfo=timezone.utc)
-    else:
-        last_scam = state.last_scam_at
-        
-    diff = now - last_scam
-
-    # Full reset if safe for 7 days
-    if diff.days >= SAFE_THRESHOLD_DAYS:
-        if state.current_score > 0:
-            state.current_score = 0
-            # Also auto-resolve old entries? Optional.
-            db.commit()
-        return
-
-    # Daily decay
-    # We simple check if updated_at was more than 24h ago to avoid spamming decay
-    if state.updated_at:
-        if state.updated_at.tzinfo is None:
-            last_update = state.updated_at.replace(tzinfo=timezone.utc)
-        else:
-            last_update = state.updated_at
-            
-        hours_since_update = (now - last_update).total_seconds() / 3600
-        
-        if hours_since_update >= 24 and state.current_score > 0:
-            # Decay Logic
-            state.current_score = max(0, state.current_score - RISK_DECAY_DAILY)
-            # We don't update last_scam_at, just the score
-            db.commit()
+def _ensure_utc(dt: datetime) -> datetime:
+    """Ensure a datetime is timezone-aware (UTC)."""
+    if dt and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _generate_details(score: int, active_threats: int, is_vulnerable: bool = False) -> str:
     if score == 0:
         return "You are safe. No active threats detected."
-    
+
     parts = []
     if active_threats > 0:
         parts.append(f"{active_threats} active threat(s) contributing to risk.")
     else:
         parts.append("Risk score is elevated due to past activity.")
-    
+
     if is_vulnerable:
         parts.append("⚠️ Vulnerable user — enhanced monitoring active.")
-    
+
     return " ".join(parts)

@@ -8,6 +8,7 @@ from database.engine import get_db
 from database.models import User, SosLog, Alert
 from schemas.schemas import SosRequest, SosResponse
 from services.auth_service import get_current_user
+from services.risk_service import add_sos_risk
 
 router = APIRouter(tags=["SOS"])
 
@@ -42,4 +43,8 @@ def trigger_sos(
 
     db.commit()
     db.refresh(sos)
+
+    # ── Risk score: SOS contributes +25 ──
+    add_sos_risk(db, current_user.id, sos.id)
+
     return SosResponse.model_validate(sos)

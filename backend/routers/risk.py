@@ -1,7 +1,7 @@
 """
-Risk score endpoint.
+Risk score endpoints.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database.engine import get_db
@@ -19,8 +19,30 @@ def get_risk_score(
     db: Session = Depends(get_db),
 ):
     """Return the current user's dynamic risk score (0-100)."""
-    # Use the new active-risk service
     result = get_current_risk(current_user.id, db)
+    return RiskResponse(**result)
+
+
+@router.get("/elder/risk-score", response_model=RiskResponse)
+def get_elder_risk_score(
+    elder_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Guardian-accessible endpoint to fetch an elder's risk score.
+    Also works for the elder themselves.
+    """
+    # Allow if: user IS the elder, OR user is a guardian
+    if current_user.id != elder_id and current_user.role not in ("guardian", "admin"):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Verify elder exists
+    elder = db.query(User).filter(User.id == elder_id).first()
+    if not elder:
+        raise HTTPException(status_code=404, detail="Elder not found")
+
+    result = get_current_risk(elder_id, db)
     return RiskResponse(**result)
 
 

@@ -1,20 +1,48 @@
 """
 ElderCare AI – FastAPI Backend
 """
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from database.engine import engine, Base
+from database.engine import engine, Base, SessionLocal
 from routers import auth, risk, sms, voice, alerts, sos, call_protection, contacts, health, guardian
+from services.risk_service import decay_all_scores
 
 # Create all tables
 Base.metadata.create_all(bind=engine)
+
+
+# ── Background decay scheduler ─────────────────────────
+async def _decay_loop():
+    """Run decay_all_scores every hour."""
+    while True:
+        try:
+            db = SessionLocal()
+            decay_all_scores(db)
+            db.close()
+            print("🕐 Risk decay cycle completed")
+        except Exception as e:
+            print(f"⚠️ Decay scheduler error: {e}")
+        await asyncio.sleep(3600)  # 1 hour
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup/shutdown lifecycle — starts the decay background task."""
+    task = asyncio.create_task(_decay_loop())
+    print("✅ Risk decay scheduler started (every 1 hour)")
+    yield
+    task.cancel()
+
 
 app = FastAPI(
     title="ElderCare AI API",
     description="Backend API for Elder Fraud Protection System",
     version="2.0.0",
+    lifespan=lifespan,
 )
 
 # CORS – allow Flutter web
