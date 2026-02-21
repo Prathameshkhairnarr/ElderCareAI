@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../models/risk_model.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import '../services/risk_score_provider.dart';
 import '../services/emergency_service.dart';
 import '../widgets/dashboard_card.dart';
 import '../widgets/risk_indicator.dart';
@@ -27,7 +27,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final _api = ApiService();
   final _auth = AuthService();
-  RiskModel? _risk;
+  final _riskProvider = RiskScoreProvider();
   bool _loading = true;
   int _selectedNavIndex = 0;
   bool _backendReachable = true;
@@ -35,7 +35,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _riskProvider.addListener(_onRiskUpdate);
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _riskProvider.removeListener(_onRiskUpdate);
+    super.dispose();
+  }
+
+  void _onRiskUpdate() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadData() async {
@@ -50,17 +61,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (mounted) setState(() => _backendReachable = false);
     }
 
-    // 2. Fetch Risk Score (safe)
+    // 2. Refresh risk score via provider (reactive)
     try {
-      final risk = await _api.getRiskScore();
-      if (!mounted) return;
-      setState(() {
-        _risk = risk;
-        _loading = false;
-      });
-    } catch (e) {
-      if (mounted) setState(() => _loading = false);
-    }
+      await _riskProvider.refresh();
+    } catch (_) {}
+
+    if (mounted) setState(() => _loading = false);
   }
 
   void _logout() {
@@ -246,26 +252,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 24),
                       child: Column(
                         children: [
-                          if (_risk != null)
-                            GestureDetector(
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      const AlertsHistoryScreen(),
-                                ),
+                          GestureDetector(
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const AlertsHistoryScreen(),
                               ),
-                              child: RiskIndicator(score: _risk!.score),
-                            )
-                          else
-                            // Show a default risk indicator when API returns null
-                            const RiskIndicator(score: 0),
+                            ),
+                            child: RiskIndicator(score: _riskProvider.score),
+                          ),
                           const SizedBox(height: 12),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 48),
                             child: Text(
-                              _risk?.details ??
-                                  'No threats detected. You\'re safe!',
+                              _riskProvider.details,
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 13,

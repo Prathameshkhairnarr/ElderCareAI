@@ -7,17 +7,19 @@ class SmsClassification {
   final int riskScore; // 0–100
   final String scamType;
   final String explanation;
+  final String label;
 
   const SmsClassification({
     required this.isScam,
     required this.riskScore,
     required this.scamType,
     required this.explanation,
+    required this.label,
   });
 
   @override
   String toString() =>
-      'SmsClassification(isScam=$isScam, risk=$riskScore, type=$scamType)';
+      'SmsClassification(label=$label, risk=$riskScore, type=$scamType)';
 }
 
 class SmsClassifier {
@@ -185,6 +187,13 @@ class SmsClassifier {
 
     final isScam = score >= 40;
 
+    String label = 'SAFE';
+    if (scamType == 'phishing' || (hasLinks && score >= 40)) {
+      label = 'PHISHING_LINK';
+    } else if (isScam) {
+      label = 'SCAM';
+    }
+
     return SmsClassification(
       isScam: isScam,
       riskScore: score,
@@ -192,6 +201,7 @@ class SmsClassifier {
       explanation: reasons.isEmpty
           ? 'No suspicious patterns'
           : reasons.join(' | '),
+      label: label,
     );
   }
 

@@ -1,12 +1,13 @@
 """
 Risk score endpoints.
 """
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database.engine import get_db
-from database.models import User
-from schemas.schemas import RiskResponse
+from database.models import User, ProcessedMessage, RiskState
+from schemas.schemas import RiskResponse, SmsRiskEvent
 from services.auth_service import get_current_user
 from services.risk_service import get_current_risk, resolve_risk
 
@@ -55,3 +56,51 @@ def resolve_risk_endpoint(
     """Mark a specific risk entry as resolved (e.g. user handled the scam)."""
     resolve_risk(db, current_user.id, entry_id)
     return {"status": "resolved", "id": entry_id}
+
+
+@router.post("/risk/sms-event")
+def handle_sms_event(
+    event: SmsRiskEvent,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Real-time SMS risk event handler with idempotency and robust formulas."""
+    
+    # 1. Idempotency Check
+    existing = db.query(ProcessedMessage).filter_by(msg_hash=event.message_hash).first()
+    if existing:
+        return {"status": "ignored", "reason": "duplicate"}
+
+    # 2. Store Message Metadata
+    new_msg = ProcessedMessage(msg_hash=event.message_hash, label=event.label)
+    db.add(new_msg)
+
+    # 3. Apply Risk Formula
+    profile = db.query(RiskState).filter_by(user_id=current_user.id).first()
+    if not profile:
+        profile = RiskState(user_id=current_user.id, current_score=0)
+        db.add(profile)
+    
+    impact = -1 if event.label == 'SAFE' else (30 if event.label == 'PHISHING_LINK' else 15)
+    
+    # Check multiplier (if last scam was less than 2 hours ago)
+    multiplier = 1.0
+    now = datetime.now(timezone.utc)
+    # Ensure profile.last_scam_at is offset-aware before comparing if we use utcnow
+    if profile.last_scam_at:
+        # If naive, make it aware
+        last_scam = profile.last_scam_at
+        if last_scam.tzinfo is None:
+            last_scam = last_scam.replace(tzinfo=timezone.utc)
+        if (now - last_scam).total_seconds() < 7200:
+            multiplier = 1.5
+
+    if impact > 0:
+        profile.last_scam_at = now
+
+    # Update Score
+    raw_new_score = profile.current_score + (impact * multiplier)
+    profile.current_score = max(0, min(100, int(raw_new_score)))
+
+    db.commit()
+    return {"status": "success", "new_score": profile.current_score}

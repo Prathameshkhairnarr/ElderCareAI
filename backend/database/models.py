@@ -191,3 +191,16 @@ class Guardian(Base):
 
     user = sqlalchemy_relationship("User", back_populates="guardians")
 
+
+class ProcessedMessage(Base):
+    """
+    Idempotency tracking for local SMS risk evaluation.
+    Stores the hash of messages to prevent duplicate score inflations.
+    """
+    __tablename__ = "processed_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    msg_hash = Column(String(64), unique=True, index=True, nullable=False)
+    label = Column(String(20), nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+

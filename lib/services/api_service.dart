@@ -52,6 +52,22 @@ class ApiService {
     }
   }
 
+  /// Fetch an elder's risk score (guardian use).
+  Future<RiskModel?> getElderRiskScore(int elderId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/elder/risk-score?elder_id=$elderId'),
+        headers: _headers,
+      );
+      if (response.statusCode == 200) {
+        return RiskModel.fromJson(jsonDecode(response.body));
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<bool> resolveRisk(int riskEntryId) async {
     try {
       final response = await http.post(

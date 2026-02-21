@@ -88,6 +88,13 @@ class RiskResponse(BaseModel):
     is_vulnerable: bool = False
 
 
+class SmsRiskEvent(BaseModel):
+    message_hash: str
+    sender: str
+    content: str
+    label: str = Field(..., pattern="^(SAFE|SCAM|PHISHING_LINK)$")
+
+
 # ── Alert ─────────────────────────────────────────────
 
 class AlertOut(BaseModel):

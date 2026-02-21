@@ -5,6 +5,7 @@ import 'services/emergency_service.dart';
 import 'services/settings_service.dart';
 import 'services/background_service.dart';
 import 'services/shake_detector_service.dart';
+import 'services/risk_score_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'app_theme.dart';
 import 'app_routes.dart';
@@ -49,6 +50,13 @@ void main() async {
     print('🔔 Notification permission: $notifStatus');
   } catch (e) {
     print('Permission request error (non-critical): $e');
+  }
+
+  // ── Initialize risk score provider (starts periodic sync) ──
+  try {
+    await RiskScoreProvider().init();
+  } catch (e) {
+    print("RiskScoreProvider Init Failed (Non-critical): $e");
   }
 
   try {

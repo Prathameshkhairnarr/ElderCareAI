@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/emergency_service.dart';
+import '../services/risk_score_provider.dart';
 import '../widgets/sos_button.dart';
 
 class SosScreen extends StatefulWidget {
@@ -118,6 +119,9 @@ class _SosScreenState extends State<SosScreen> {
 
     if (!mounted) return;
     setState(() => _triggered = success);
+
+    // Refresh risk score (SOS contributes +25 on backend)
+    if (success) RiskScoreProvider().onThreatEvent();
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

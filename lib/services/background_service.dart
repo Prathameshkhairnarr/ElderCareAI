@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import 'sms_classifier.dart';
 import 'risk_score_engine.dart';
+import 'risk_score_provider.dart';
 import 'alert_policy.dart';
 
 // ── Constants ──
@@ -50,7 +51,7 @@ bool _isOtpOrCode(String body) {
 
 /// Process an SMS through the full intelligence pipeline.
 /// Called from both foreground and background handlers.
-Future<void> _processSms(String body) async {
+Future<void> _processSms(String body, String sender) async {
   // ── STEP 1: On-device heuristic classification (instant, 0 network) ──
   final classification = SmsClassifier.classify(body);
   print('📊 SMS classified: $classification');
@@ -65,7 +66,9 @@ Future<void> _processSms(String body) async {
   // ── STEP 3: Backend sync (only for high-risk messages) ──
   if (classification.isScam) {
     // Always send scam SMS to backend for confirmation + storage + alert
-    await _syncWithBackend(body);
+    await _syncWithBackend(body, sender, classification);
+    // Trigger reactive UI refresh
+    RiskScoreProvider().onThreatEvent();
   } else {
     // Safe SMS: throttled score-only sync (max once per 2 min)
     final now = DateTime.now();
@@ -85,8 +88,11 @@ Future<void> _processSms(String body) async {
     );
 
     if (shouldNotify) {
+      String titlePrefix = classification.label == 'PHISHING_LINK'
+          ? '🛑 Dangerous Link'
+          : '⚠️ Potential Scam';
       _showNotification(
-        '⚠️ Scam Detected — ${_friendlyType(classification.scamType)}',
+        '$titlePrefix from $sender',
         classification.explanation,
         true,
       );
@@ -98,7 +104,11 @@ Future<void> _processSms(String body) async {
 }
 
 /// Sync a high-risk SMS with the backend (stores + creates alert + updates server risk).
-Future<void> _syncWithBackend(String body) async {
+Future<void> _syncWithBackend(
+  String body,
+  String sender,
+  SmsClassification classification,
+) async {
   try {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('jwt_token');
@@ -109,12 +119,17 @@ Future<void> _syncWithBackend(String body) async {
 
     final response = await http
         .post(
-          Uri.parse('$_baseUrl/sms/analyze-sms'),
+          Uri.parse('$_baseUrl/risk/sms-event'),
           headers: {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer $token',
           },
-          body: jsonEncode({'message': body}),
+          body: jsonEncode({
+            'message_hash': _quickHash(body),
+            'sender': sender,
+            'content': body,
+            'label': classification.label,
+          }),
         )
         .timeout(const Duration(seconds: 10));
 
@@ -130,28 +145,6 @@ Future<void> _syncWithBackend(String body) async {
   }
 }
 
-/// Human-friendly scam type label
-String _friendlyType(String type) {
-  switch (type) {
-    case 'financial_impersonation':
-      return 'Bank Impersonation';
-    case 'financial_scam':
-      return 'Financial Scam';
-    case 'impersonation':
-      return 'Authority Impersonation';
-    case 'threat_scam':
-      return 'Threatening Message';
-    case 'phishing':
-      return 'Phishing Link';
-    case 'suspicious_link':
-      return 'Suspicious Link';
-    case 'social_engineering':
-      return 'Social Engineering';
-    default:
-      return 'Suspicious Message';
-  }
-}
-
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  BACKGROUND SERVICE ENTRY POINTS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -160,6 +153,7 @@ String _friendlyType(String type) {
 @pragma('vm:entry-point')
 Future<void> backgroundMessageHandler(SmsMessage message) async {
   final body = message.body ?? '';
+  final sender = message.address ?? 'Unknown';
   if (body.trim().isEmpty || _isOtpOrCode(body)) return;
 
   final hash = _quickHash(body);
@@ -167,7 +161,7 @@ Future<void> backgroundMessageHandler(SmsMessage message) async {
   _recentHashes.add(hash);
   if (_recentHashes.length > 200) _recentHashes.clear();
 
-  await _processSms(body);
+  await _processSms(body, sender);
 }
 
 /// Foreground service entry point
@@ -212,6 +206,7 @@ void onStart(ServiceInstance service) async {
   telephony.listenIncomingSms(
     onNewMessage: (SmsMessage message) {
       final body = message.body ?? '';
+      final sender = message.address ?? 'Unknown';
       print('📩 SMS RECEIVED: $body');
 
       if (body.trim().isEmpty || _isOtpOrCode(body)) return;
@@ -228,7 +223,7 @@ void onStart(ServiceInstance service) async {
       if (_recentHashes.length > 200) _recentHashes.clear();
 
       print('� SMS → pipeline');
-      _processSms(body);
+      _processSms(body, sender);
     },
     onBackgroundMessage: backgroundMessageHandler,
     listenInBackground: true,
