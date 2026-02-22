@@ -116,6 +116,7 @@ class SosRequest(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     message: Optional[str] = "Emergency SOS triggered"
+    idempotency_key: Optional[str] = None
 
 
 class SosResponse(BaseModel):

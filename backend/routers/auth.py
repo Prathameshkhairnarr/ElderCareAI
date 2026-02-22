@@ -1,6 +1,7 @@
 """
-Auth router: register + login.
+Auth router: register + login. (Production Hardened)
 """
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,6 +14,7 @@ from schemas.schemas import RegisterRequest, TokenResponse, UserOut
 from services.auth_service import hash_password, verify_password, create_access_token
 from utils.phone_utils import normalize_phone
 
+logger = logging.getLogger("eldercare")
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
@@ -24,7 +26,7 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Phone number already registered")
 
-    print(f"🔵 Registering user: {body.name} ({normalized_phone})")
+    logger.info(f"Registering user: {body.name}")
 
     try:
         user = User(
@@ -48,12 +50,12 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
             "token_type": "bearer",
             "user": UserOut.model_validate(user).model_dump(mode="json"),
         }
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
     except Exception as e:
         db.rollback()
-        import traceback
-        traceback.print_exc()
-        print(f"❌ REGISTRATION ERROR: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
+        logger.error(f"Registration error: {type(e).__name__}")
+        raise HTTPException(status_code=500, detail="Registration failed. Please try again.")
 
 
 @router.post("/login")
@@ -63,6 +65,7 @@ def login(
 ):
     """OAuth2 compatible login with structured response."""
     normalized_phone = normalize_phone(form_data.username)
+    logger.info(f"Login attempt for phone (normalized)")
     user = db.query(User).filter(User.phone == normalized_phone).first()
 
     if not user or not verify_password(form_data.password, user.password_hash):

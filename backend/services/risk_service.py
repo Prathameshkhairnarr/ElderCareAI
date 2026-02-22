@@ -8,10 +8,13 @@ Unified scoring model:
   - Spike detection for burst of scams
   - Smooth hourly decay, NOT coarse daily decay
 """
+import logging
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from database.models import RiskEntry, RiskState, User, HealthProfile, Alert
+
+logger = logging.getLogger("eldercare")
 
 
 # ── Event Weights ──
@@ -143,10 +146,11 @@ def add_risk_entry(
     db.commit()
 
 
-def add_sos_risk(db: Session, user_id: int, sos_id: int):
+def add_sos_risk(db: Session, user_id: int, sos_id: int, commit: bool = True):
     """
     Record an SOS event as a risk contribution.
     SOS = highest weight event (W_SOS = 25).
+    When commit=False, caller is responsible for committing.
     """
     source_id = f"sos_{sos_id}"
 
@@ -169,13 +173,15 @@ def add_sos_risk(db: Session, user_id: int, sos_id: int):
     )
     db.add(new_entry)
 
-    state.current_score = min(state.current_score + W_SOS, 100)
+    state.current_score = min(max(state.current_score + W_SOS, 0), 100)
     state.last_scam_at = datetime.now(timezone.utc)
 
     # SOS always triggers high-risk alert
     _check_high_risk_alert(db, user_id, state.current_score)
 
-    db.commit()
+    if commit:
+        db.commit()
+    logger.info(f"SOS risk added for user {user_id}: score={state.current_score}")
 
 
 def resolve_risk(db: Session, user_id: int, entry_id: int):

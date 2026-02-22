@@ -1,13 +1,20 @@
 """
-Authentication service: password hashing + JWT token management.
+Authentication service: password hashing + JWT token management. (Production Hardened)
+
+Changes:
+- Wrap verify_password in try/except (bcrypt can crash on corrupt hashes)
+- Fix user_id type: payload.get("sub") returns string, cast to int safely
+- Explicit expired token handling
+- Never log password hashes or tokens
 """
 import os
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+from jose import JWTError, ExpiredSignatureError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
@@ -16,6 +23,8 @@ from database.engine import get_db
 from database.models import User
 
 load_dotenv()
+
+logger = logging.getLogger("eldercare")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "fallback-dev-key")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
@@ -32,10 +41,14 @@ def hash_password(password: str):
     return pwd_context.hash(password)
 
 
-
-def verify_password(plain_password: str, hashed_password: str):
-    plain_password = plain_password[:72]
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify password — crash-safe against corrupt hashes."""
+    try:
+        plain_password = plain_password[:72]
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception as e:
+        logger.error(f"Password verification error: {type(e).__name__}")
+        return False
 
 
 # ── JWT ───────────────────────────────────────────────
@@ -50,10 +63,16 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired. Please login again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
+            detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -66,9 +85,16 @@ def get_current_user(
 ) -> User:
     """FastAPI dependency – extracts & validates user from JWT."""
     payload = decode_token(token)
-    user_id: int = payload.get("sub")
-    if user_id is None:
+    raw_user_id = payload.get("sub")
+    if raw_user_id is None:
         raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    # Safely cast to int — sub is stored as string
+    try:
+        user_id = int(raw_user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid token payload: bad user id")
+
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")

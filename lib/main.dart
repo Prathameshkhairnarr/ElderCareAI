@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import 'services/auth_service.dart';
@@ -6,6 +7,7 @@ import 'services/settings_service.dart';
 import 'services/background_service.dart';
 import 'services/shake_detector_service.dart';
 import 'services/risk_score_provider.dart';
+import 'services/app_logger.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'app_theme.dart';
 import 'app_routes.dart';
@@ -13,56 +15,103 @@ import 'app_routes.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // ── Global error handlers ──
+  FlutterError.onError = (FlutterErrorDetails details) {
+    AppLogger.error(
+      LogCategory.lifecycle,
+      'FlutterError: ${details.exceptionAsString()}',
+    );
+    // Don't rethrow — prevents crash in production
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    AppLogger.error(LogCategory.lifecycle, 'PlatformError: $error');
+    return true; // Handled — prevent crash
+  };
+
+  // ── Service initialization with individual timeouts ──
+  // Each init is wrapped to prevent one failure from blocking startup
+
   try {
-    await AuthService().init();
+    await AuthService().init().timeout(const Duration(seconds: 5));
   } catch (e) {
-    print("AuthService Init Failed: $e");
+    AppLogger.error(LogCategory.auth, 'AuthService Init Failed: $e');
   }
 
   try {
-    await EmergencyService().init();
+    await EmergencyService().init().timeout(const Duration(seconds: 5));
   } catch (e) {
-    print("EmergencyService Init Failed (Non-critical): $e");
+    AppLogger.warn(
+      LogCategory.sos,
+      'EmergencyService Init Failed (Non-critical): $e',
+    );
   }
 
-  // Start shake-to-SOS detector (depends on EmergencyService being init'd)
+  // Start shake-to-SOS detector
   try {
     ShakeDetectorService().start();
   } catch (e) {
-    print("ShakeDetector Init Failed (Non-critical): $e");
+    AppLogger.warn(
+      LogCategory.shake,
+      'ShakeDetector Init Failed (Non-critical): $e',
+    );
   }
 
   try {
-    await SettingsService().init();
+    await SettingsService().init().timeout(const Duration(seconds: 5));
   } catch (e) {
-    print("SettingsService Init Failed (Non-critical): $e");
+    AppLogger.warn(
+      LogCategory.lifecycle,
+      'SettingsService Init Failed (Non-critical): $e',
+    );
   }
 
-  // ── Request SMS permissions (CRITICAL for real-device SMS listener) ──
+  // ── Request permissions (CRITICAL for real-device SMS listener) ──
   try {
     final smsStatus = await Permission.sms.request();
-    print('📱 SMS permission: $smsStatus');
+    AppLogger.info(LogCategory.lifecycle, 'SMS permission: $smsStatus');
     if (smsStatus.isPermanentlyDenied) {
-      print('⚠️ SMS permission permanently denied — SMS monitoring disabled');
+      AppLogger.warn(
+        LogCategory.lifecycle,
+        'SMS permission permanently denied — SMS monitoring disabled',
+      );
     }
     // Android 13+ needs notification permission
     final notifStatus = await Permission.notification.request();
-    print('🔔 Notification permission: $notifStatus');
+    AppLogger.info(
+      LogCategory.lifecycle,
+      'Notification permission: $notifStatus',
+    );
+
+    // Request battery optimization ignore for background reliability
+    final batteryStatus = await Permission.ignoreBatteryOptimizations.request();
+    AppLogger.info(
+      LogCategory.lifecycle,
+      'Battery optimization ignore: $batteryStatus',
+    );
   } catch (e) {
-    print('Permission request error (non-critical): $e');
+    AppLogger.warn(
+      LogCategory.lifecycle,
+      'Permission request error (non-critical): $e',
+    );
   }
 
   // ── Initialize risk score provider (starts periodic sync) ──
   try {
-    await RiskScoreProvider().init();
+    await RiskScoreProvider().init().timeout(const Duration(seconds: 5));
   } catch (e) {
-    print("RiskScoreProvider Init Failed (Non-critical): $e");
+    AppLogger.warn(
+      LogCategory.risk,
+      'RiskScoreProvider Init Failed (Non-critical): $e',
+    );
   }
 
   try {
-    await initializeBackgroundService();
+    await initializeBackgroundService().timeout(const Duration(seconds: 10));
   } catch (e) {
-    print("Background Service Init Failed: $e");
+    AppLogger.error(
+      LogCategory.lifecycle,
+      'Background Service Init Failed: $e',
+    );
   }
 
   // Determine start route based on persisted session
@@ -72,7 +121,10 @@ void main() async {
     startRoute = auth.currentUser!.role == UserRole.guardian
         ? AppRoutes.guardianDashboard
         : AppRoutes.dashboard;
-    print('🟢 Auto-login: ${auth.currentUser!.name} → $startRoute');
+    AppLogger.info(
+      LogCategory.auth,
+      'Auto-login: ${auth.currentUser!.name} → $startRoute',
+    );
   } else {
     startRoute = AppRoutes.login;
   }

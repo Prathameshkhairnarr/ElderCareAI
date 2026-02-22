@@ -1,7 +1,17 @@
 """
-ElderCare AI – FastAPI Backend
+ElderCare AI – FastAPI Backend (Production Hardened)
+
+Changes:
+- Removed raw stack trace from 500 responses
+- Added request_id (UUID) per request
+- Added latency tracking
+- Structured JSON-style logging
+- Fixed DB session handling in decay loop
 """
 import asyncio
+import uuid
+import time
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -11,6 +21,15 @@ from database.engine import engine, Base, SessionLocal
 from routers import auth, risk, sms, voice, alerts, sos, call_protection, contacts, health, guardian
 from services.risk_service import decay_all_scores
 
+# ── Structured Logging Setup ──
+logger = logging.getLogger("eldercare")
+logger.setLevel(logging.INFO)
+handler = logging.StreamHandler()
+handler.setFormatter(logging.Formatter(
+    '%(asctime)s [%(levelname)s] %(message)s'
+))
+logger.addHandler(handler)
+
 # Create all tables
 Base.metadata.create_all(bind=engine)
 
@@ -19,13 +38,16 @@ Base.metadata.create_all(bind=engine)
 async def _decay_loop():
     """Run decay_all_scores every hour."""
     while True:
+        db = None
         try:
             db = SessionLocal()
             decay_all_scores(db)
-            db.close()
-            print("🕐 Risk decay cycle completed")
+            logger.info("Risk decay cycle completed")
         except Exception as e:
-            print(f"⚠️ Decay scheduler error: {e}")
+            logger.error(f"Decay scheduler error: {e}")
+        finally:
+            if db:
+                db.close()
         await asyncio.sleep(3600)  # 1 hour
 
 
@@ -33,7 +55,7 @@ async def _decay_loop():
 async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle — starts the decay background task."""
     task = asyncio.create_task(_decay_loop())
-    print("✅ Risk decay scheduler started (every 1 hour)")
+    logger.info("Risk decay scheduler started (every 1 hour)")
     yield
     task.cancel()
 
@@ -41,33 +63,48 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ElderCare AI API",
     description="Backend API for Elder Fraud Protection System",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan,
 )
 
 # CORS – allow Flutter web
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # Tighten in production
+    allow_origins=["*"],   # TODO: Tighten in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
 @app.middleware("http")
-async def catch_exceptions_middleware(request: Request, call_next):
-    print(f"📥 REQUEST: {request.method} {request.url}")
+async def structured_logging_middleware(request: Request, call_next):
+    """Production middleware: request_id, latency tracking, NO stack traces in response."""
+    request_id = str(uuid.uuid4())[:8]
+    start_time = time.time()
+
+    # Attach request_id for downstream use
+    request.state.request_id = request_id
+
+    logger.info(f"[{request_id}] {request.method} {request.url.path}")
+
     try:
         response = await call_next(request)
-        print(f"📤 RESPONSE: {response.status_code}")
+        latency_ms = int((time.time() - start_time) * 1000)
+        logger.info(f"[{request_id}] {response.status_code} ({latency_ms}ms)")
+        response.headers["X-Request-ID"] = request_id
         return response
     except Exception as exc:
-        import traceback
-        error_trace = traceback.format_exc()
-        print(error_trace)
+        latency_ms = int((time.time() - start_time) * 1000)
+        logger.error(f"[{request_id}] 500 Internal Server Error ({latency_ms}ms): {type(exc).__name__}: {exc}")
+        # NEVER expose stack traces to client
         return JSONResponse(
-            status_code=500, 
-            content={"detail": str(exc), "trace": error_trace}
+            status_code=500,
+            content={
+                "detail": "Internal server error. Please try again.",
+                "request_id": request_id,
+            },
+            headers={"X-Request-ID": request_id},
         )
 
 # Include routers with prefixes
@@ -84,4 +121,4 @@ app.include_router(guardian.router, prefix="", tags=["Guardian"])
 
 @app.get("/", tags=["Health"])
 def health_check():
-    return {"status": "ok", "app": "ElderCare AI", "version": "2.0.0"}
+    return {"status": "ok", "app": "ElderCare AI", "version": "2.1.0"}

@@ -1,8 +1,11 @@
 /// Client-side dynamic risk scoring engine with time-based decay.
 /// Persists to SharedPreferences so score survives app restarts.
+///
+/// HARDENED: all SharedPreferences writes use await, score always bounded 0–100.
 library;
 
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_logger.dart';
 
 class RiskScoreEngine {
   RiskScoreEngine._();
@@ -26,76 +29,99 @@ class RiskScoreEngine {
     required bool isScam,
     required int riskScore,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
+    try {
+      final prefs = await SharedPreferences.getInstance();
 
-    double current = (prefs.getDouble(_keyScore) ?? 0.0);
+      double current = (prefs.getDouble(_keyScore) ?? 0.0);
 
-    if (isScam) {
-      // Weight contribution by the classifier's confidence
-      final double contribution =
-          _scamContribution * (riskScore / 100.0).clamp(0.5, 1.0);
+      if (isScam) {
+        // Weight contribution by the classifier's confidence
+        final double contribution =
+            _scamContribution * (riskScore / 100.0).clamp(0.5, 1.0);
 
-      // Spike detection: 3+ scams in 10 min → multiplier
-      final spikeContribution = _checkSpike(prefs)
-          ? contribution * _spikeMultiplier
-          : contribution;
+        // Spike detection: 3+ scams in 10 min → multiplier
+        final spikeContribution = await _checkSpike(prefs)
+            ? contribution * _spikeMultiplier
+            : contribution;
 
-      current = (current + spikeContribution).clamp(0, 100);
+        current = (current + spikeContribution).clamp(0, 100);
 
-      // Record timestamp for time-decay
-      await prefs.setString(_keyLastScamAt, DateTime.now().toIso8601String());
-    } else {
-      // Safe SMS → slow decay
-      current = (current - _safeDecay).clamp(0, 100);
+        // Record timestamp for time-decay
+        await prefs.setString(_keyLastScamAt, DateTime.now().toIso8601String());
+      } else {
+        // Safe SMS → slow decay
+        current = (current - _safeDecay).clamp(0, 100);
+      }
+
+      await prefs.setDouble(_keyScore, current);
+      return current.round();
+    } catch (e) {
+      AppLogger.error(
+        LogCategory.risk,
+        'RiskScoreEngine.recordEvent error: $e',
+      );
+      return 0;
     }
-
-    await prefs.setDouble(_keyScore, current);
-    return current.round();
   }
 
   /// Get the current risk score with time-based decay applied.
   static Future<int> getScore() async {
-    final prefs = await SharedPreferences.getInstance();
-    double raw = prefs.getDouble(_keyScore) ?? 0.0;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      double raw = prefs.getDouble(_keyScore) ?? 0.0;
 
-    // Apply hourly decay since last scam
-    final lastScamStr = prefs.getString(_keyLastScamAt);
-    if (lastScamStr != null) {
-      final lastScam = DateTime.tryParse(lastScamStr);
-      if (lastScam != null) {
-        final hoursSince = DateTime.now().difference(lastScam).inMinutes / 60.0;
-        final decay = hoursSince * _hourlyDecay;
-        raw = (raw - decay).clamp(0, 100);
-        // Persist the decayed value
-        await prefs.setDouble(_keyScore, raw);
+      // Apply hourly decay since last scam
+      final lastScamStr = prefs.getString(_keyLastScamAt);
+      if (lastScamStr != null) {
+        final lastScam = DateTime.tryParse(lastScamStr);
+        if (lastScam != null) {
+          final hoursSince =
+              DateTime.now().difference(lastScam).inMinutes / 60.0;
+          final decay = hoursSince * _hourlyDecay;
+          raw = (raw - decay).clamp(0, 100);
+          // Persist the decayed value
+          await prefs.setDouble(_keyScore, raw);
+        }
       }
-    }
 
-    return raw.round();
+      return raw.round();
+    } catch (e) {
+      AppLogger.error(LogCategory.risk, 'RiskScoreEngine.getScore error: $e');
+      return 0;
+    }
   }
 
   /// Check if we're in a scam spike (3+ scams within 10 min window).
   /// Also updates the spike tracking counters.
-  static bool _checkSpike(SharedPreferences prefs) {
-    final now = DateTime.now();
-    final windowStartStr = prefs.getString(_keyRecentScamWindowStart);
-    int count = prefs.getInt(_keyRecentScamCount) ?? 0;
+  /// FIXED: all prefs writes now use await.
+  static Future<bool> _checkSpike(SharedPreferences prefs) async {
+    try {
+      final now = DateTime.now();
+      final windowStartStr = prefs.getString(_keyRecentScamWindowStart);
+      int count = prefs.getInt(_keyRecentScamCount) ?? 0;
 
-    if (windowStartStr != null) {
-      final windowStart = DateTime.tryParse(windowStartStr);
-      if (windowStart != null &&
-          now.difference(windowStart).inMinutes <= _spikeWindowMinutes) {
-        // Still in current window
-        count++;
-        prefs.setInt(_keyRecentScamCount, count);
-        return count >= _spikeThreshold;
+      if (windowStartStr != null) {
+        final windowStart = DateTime.tryParse(windowStartStr);
+        if (windowStart != null &&
+            now.difference(windowStart).inMinutes <= _spikeWindowMinutes) {
+          // Still in current window
+          count++;
+          await prefs.setInt(_keyRecentScamCount, count);
+          return count >= _spikeThreshold;
+        }
       }
-    }
 
-    // Start new window
-    prefs.setString(_keyRecentScamWindowStart, now.toIso8601String());
-    prefs.setInt(_keyRecentScamCount, 1);
-    return false;
+      // Start new window
+      await prefs.setString(_keyRecentScamWindowStart, now.toIso8601String());
+      await prefs.setInt(_keyRecentScamCount, 1);
+      return false;
+    } catch (e) {
+      AppLogger.error(
+        LogCategory.risk,
+        'RiskScoreEngine._checkSpike error: $e',
+      );
+      return false;
+    }
   }
 
   /// Reset score (for testing / admin purposes).

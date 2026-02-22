@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:ui';
 import 'dart:convert';
-import 'dart:collection';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:another_telephony/telephony.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,20 +12,24 @@ import 'sms_classifier.dart';
 import 'risk_score_engine.dart';
 import 'risk_score_provider.dart';
 import 'alert_policy.dart';
+import 'app_logger.dart';
 
 // ── Constants ──
 const String notificationChannelId = 'elder_care_alerts';
 const int notificationId = 888;
 const String _baseUrl = ApiConfig.baseUrl;
 
-// ── Dedup & Debounce State (in-memory, per session) ──
-final Set<String> _recentHashes = HashSet<String>();
+// ── Dedup & Debounce State (persistent) ──
+const String _dedupKey = 'processed_sms_hashes';
 DateTime _lastProcessedAt = DateTime(2000);
 const Duration _debounceInterval = Duration(seconds: 3);
 
 // ── Throttle for backend risk-score sync ──
 DateTime _lastBackendSyncAt = DateTime(2000);
 const Duration _backendSyncThrottle = Duration(minutes: 2);
+
+// ── Max message length to prevent OOM ──
+const int _maxMessageLength = 2000;
 
 // ── Helpers ──
 
@@ -36,12 +38,19 @@ String _quickHash(String text) {
   return normalized.hashCode.toString();
 }
 
-/// Skip OTPs and very short messages
-bool _isOtpOrCode(String body) {
-  final trimmed = body.trim();
+/// Skip OTPs and very short messages — null-safe
+bool _isOtpOrCode(String? body) {
+  if (body == null || body.trim().isEmpty) return true;
+  final trimmed = body.trim().toLowerCase();
   if (trimmed.length < 6) return true;
   final digitCount = trimmed.replaceAll(RegExp(r'[^0-9]'), '').length;
   if (trimmed.length <= 20 && digitCount / trimmed.length > 0.6) return true;
+
+  // Enhanced OTP filter based on common keywords
+  if (RegExp(r'\b(otp|code|verification|pin|password)\b').hasMatch(trimmed) &&
+      digitCount >= 4) {
+    return true;
+  }
   return false;
 }
 
@@ -51,55 +60,78 @@ bool _isOtpOrCode(String body) {
 
 /// Process an SMS through the full intelligence pipeline.
 /// Called from both foreground and background handlers.
+/// NEVER crashes — all exceptions swallowed defensively.
 Future<void> _processSms(String body, String sender) async {
-  // ── STEP 1: On-device heuristic classification (instant, 0 network) ──
-  final classification = SmsClassifier.classify(body);
-  print('📊 SMS classified: $classification');
+  try {
+    // Truncate oversized messages to prevent OOM
+    final safeBody = body.length > _maxMessageLength
+        ? body.substring(0, _maxMessageLength)
+        : body;
 
-  // ── STEP 2: Update dynamic risk score ──
-  final updatedScore = await RiskScoreEngine.recordEvent(
-    isScam: classification.isScam,
-    riskScore: classification.riskScore,
-  );
-  print('📈 Risk score updated: $updatedScore');
-
-  // ── STEP 3: Backend sync (only for high-risk messages) ──
-  if (classification.isScam) {
-    // Always send scam SMS to backend for confirmation + storage + alert
-    await _syncWithBackend(body, sender, classification);
-    // Trigger reactive UI refresh
-    RiskScoreProvider().onThreatEvent();
-  } else {
-    // Safe SMS: throttled score-only sync (max once per 2 min)
-    final now = DateTime.now();
-    if (now.difference(_lastBackendSyncAt) > _backendSyncThrottle) {
-      _lastBackendSyncAt = now;
-      // Fire-and-forget lightweight sync — just updating the score
-      // The backend already handles this via the analyze endpoint
-    }
-  }
-
-  // ── STEP 4: Smart alert policy ──
-  if (classification.isScam) {
-    final shouldNotify = AlertPolicy.shouldAlert(
-      currentRiskScore: updatedScore,
-      smsRiskScore: classification.riskScore,
-      scamType: classification.scamType,
+    // ── STEP 1: On-device heuristic classification (instant, 0 network) ──
+    final classification = SmsClassifier.classify(safeBody);
+    AppLogger.info(
+      LogCategory.sms,
+      'SMS classified: ${classification.label} risk=${classification.riskScore}',
     );
 
-    if (shouldNotify) {
-      String titlePrefix = classification.label == 'PHISHING_LINK'
-          ? '🛑 Dangerous Link'
-          : '⚠️ Potential Scam';
-      _showNotification(
-        '$titlePrefix from $sender',
-        classification.explanation,
-        true,
-      );
-      print('🔔 Alert fired for ${classification.scamType}');
+    // ── STEP 2: Update dynamic risk score ──
+    final updatedScore = await RiskScoreEngine.recordEvent(
+      isScam: classification.isScam,
+      riskScore: classification.riskScore,
+    );
+    AppLogger.info(LogCategory.risk, 'Risk score updated: $updatedScore');
+
+    // ── STEP 3: Backend sync (only for high-risk messages) ──
+    if (classification.isScam) {
+      await _syncWithBackend(safeBody, sender, classification);
+      // Trigger reactive UI refresh — catch any error silently
+      try {
+        RiskScoreProvider().onThreatEvent();
+      } catch (_) {
+        // Background isolate may not have access to UI provider — safe to ignore
+      }
     } else {
-      print('🔕 Alert suppressed by policy');
+      // Safe SMS: throttled score-only sync (max once per 2 min)
+      final now = DateTime.now();
+      if (now.difference(_lastBackendSyncAt) > _backendSyncThrottle) {
+        _lastBackendSyncAt = now;
+      }
     }
+
+    // ── STEP 4: Smart alert policy ──
+    if (classification.isScam) {
+      final shouldNotify = AlertPolicy.shouldAlert(
+        currentRiskScore: updatedScore,
+        smsRiskScore: classification.riskScore,
+        scamType: classification.scamType,
+      );
+
+      if (shouldNotify) {
+        String titlePrefix = classification.label == 'PHISHING_LINK'
+            ? '🛑 Dangerous Link'
+            : '⚠️ Potential Scam';
+        _showNotification(
+          '$titlePrefix from $sender',
+          classification.explanation,
+          true,
+        );
+        AppLogger.info(
+          LogCategory.sms,
+          'Alert fired for ${classification.scamType}',
+        );
+      } else {
+        AppLogger.info(LogCategory.sms, 'Alert suppressed by policy');
+      }
+    }
+  } catch (e, stackTrace) {
+    AppLogger.error(LogCategory.sms, 'CRITICAL ERROR in _processSms: $e');
+    // Log stack trace only in debug
+    assert(() {
+      print(stackTrace);
+      return true;
+    }());
+    // Suppress crash to prevent ANR or background service death
   }
 }
 
@@ -113,7 +145,7 @@ Future<void> _syncWithBackend(
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('jwt_token');
     if (token == null) {
-      print('BG SMS: No token, skipping backend sync');
+      AppLogger.warn(LogCategory.sms, 'No token, skipping backend sync');
       return;
     }
 
@@ -135,12 +167,17 @@ Future<void> _syncWithBackend(
 
     if (response.statusCode == 200) {
       _lastBackendSyncAt = DateTime.now();
-      print('✅ Backend sync OK');
+      AppLogger.info(LogCategory.sms, 'Backend sync OK');
     } else {
-      print('❌ Backend sync failed: ${response.statusCode}');
+      AppLogger.warn(
+        LogCategory.sms,
+        'Backend sync failed: ${response.statusCode}',
+      );
     }
+  } on TimeoutException catch (_) {
+    AppLogger.warn(LogCategory.sms, 'Backend sync timed out');
   } catch (e) {
-    print('❌ Backend sync error: $e');
+    AppLogger.error(LogCategory.sms, 'Backend sync error: $e');
     // Fail silently — on-device classification already handled it
   }
 }
@@ -152,16 +189,36 @@ Future<void> _syncWithBackend(
 /// Top-level handler for SMS received when app is in background isolate
 @pragma('vm:entry-point')
 Future<void> backgroundMessageHandler(SmsMessage message) async {
-  final body = message.body ?? '';
-  final sender = message.address ?? 'Unknown';
-  if (body.trim().isEmpty || _isOtpOrCode(body)) return;
+  try {
+    final body = message.body ?? '';
+    final sender = message.address ?? 'Unknown';
 
-  final hash = _quickHash(body);
-  if (_recentHashes.contains(hash)) return;
-  _recentHashes.add(hash);
-  if (_recentHashes.length > 200) _recentHashes.clear();
+    AppLogger.info(LogCategory.sms, 'BG SMS received from $sender');
 
-  await _processSms(body, sender);
+    if (body.trim().isEmpty || _isOtpOrCode(body)) {
+      AppLogger.info(LogCategory.sms, 'BG SMS ignored: empty/OTP');
+      return;
+    }
+
+    final hash = _quickHash(body);
+    final prefs = await SharedPreferences.getInstance();
+    List<String> recentHashes = prefs.getStringList(_dedupKey) ?? [];
+
+    if (recentHashes.contains(hash)) {
+      AppLogger.info(LogCategory.sms, 'BG SMS duplicate suppressed');
+      return;
+    }
+
+    recentHashes.add(hash);
+    if (recentHashes.length > 200) {
+      recentHashes.removeAt(0); // Keep max 200 items
+    }
+    await prefs.setStringList(_dedupKey, recentHashes);
+
+    await _processSms(body, sender);
+  } catch (e) {
+    AppLogger.error(LogCategory.sms, 'Error in backgroundMessageHandler: $e');
+  }
 }
 
 /// Foreground service entry point
@@ -199,37 +256,52 @@ void onStart(ServiceInstance service) async {
   // ── SMS Listener ──
   final Telephony telephony = Telephony.instance;
 
-  // Request SMS permission via Telephony's own API (ensures plugin-internal state is set)
-  final bool? permGranted = await telephony.requestSmsPermissions;
-  print('📱 Telephony SMS permission granted: $permGranted');
-
   telephony.listenIncomingSms(
-    onNewMessage: (SmsMessage message) {
+    onNewMessage: (SmsMessage message) async {
       final body = message.body ?? '';
       final sender = message.address ?? 'Unknown';
-      print('📩 SMS RECEIVED: $body');
 
-      if (body.trim().isEmpty || _isOtpOrCode(body)) return;
+      AppLogger.info(LogCategory.sms, 'FG SMS received from $sender');
+
+      if (body.trim().isEmpty || _isOtpOrCode(body)) {
+        AppLogger.info(LogCategory.sms, 'FG SMS ignored: empty/OTP');
+        return;
+      }
 
       // Debounce
       final now = DateTime.now();
-      if (now.difference(_lastProcessedAt) < _debounceInterval) return;
+      if (now.difference(_lastProcessedAt) < _debounceInterval) {
+        AppLogger.info(LogCategory.sms, 'FG SMS debounced');
+        return;
+      }
       _lastProcessedAt = now;
 
-      // Dedup
-      final hash = _quickHash(body);
-      if (_recentHashes.contains(hash)) return;
-      _recentHashes.add(hash);
-      if (_recentHashes.length > 200) _recentHashes.clear();
+      try {
+        // Dedup with SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        List<String> recentHashes = prefs.getStringList(_dedupKey) ?? [];
+        final hash = _quickHash(body);
 
-      print('� SMS → pipeline');
-      _processSms(body, sender);
+        if (recentHashes.contains(hash)) {
+          AppLogger.info(LogCategory.sms, 'FG SMS duplicate suppressed');
+          return;
+        }
+
+        recentHashes.add(hash);
+        if (recentHashes.length > 200) recentHashes.removeAt(0);
+        await prefs.setStringList(_dedupKey, recentHashes);
+
+        AppLogger.info(LogCategory.sms, 'FG SMS → pipeline');
+        await _processSms(body, sender);
+      } catch (e) {
+        AppLogger.error(LogCategory.sms, 'Error in onNewMessage: $e');
+      }
     },
     onBackgroundMessage: backgroundMessageHandler,
     listenInBackground: true,
   );
 
-  print('ElderCare SMS Intelligence active');
+  AppLogger.info(LogCategory.lifecycle, 'ElderCare SMS Intelligence active');
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -237,23 +309,27 @@ void onStart(ServiceInstance service) async {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void _showNotification(String title, String body, bool isScam) async {
-  final plugin = FlutterLocalNotificationsPlugin();
-  await plugin.show(
-    DateTime.now().millisecond,
-    title,
-    body,
-    NotificationDetails(
-      android: AndroidNotificationDetails(
-        notificationChannelId,
-        'ElderCare Alerts',
-        channelDescription: 'Alerts for detected scams and threats',
-        importance: Importance.max,
-        priority: Priority.high,
-        color: isScam ? Colors.red : Colors.green,
-        icon: 'ic_bg_service_small',
+  try {
+    final plugin = FlutterLocalNotificationsPlugin();
+    await plugin.show(
+      DateTime.now().millisecond,
+      title,
+      body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          notificationChannelId,
+          'ElderCare Alerts',
+          channelDescription: 'Alerts for detected scams and threats',
+          importance: Importance.max,
+          priority: Priority.high,
+          color: isScam ? Colors.red : Colors.green,
+          icon: 'ic_bg_service_small',
+        ),
       ),
-    ),
-  );
+    );
+  } catch (e) {
+    AppLogger.error(LogCategory.sms, 'Notification error: $e');
+  }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

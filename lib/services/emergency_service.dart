@@ -4,9 +4,11 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/services.dart'; // MethodChannel
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import 'api_service.dart';
+import 'app_logger.dart';
 
 class EmergencyContact {
   final String id;
@@ -14,7 +16,7 @@ class EmergencyContact {
   final String phone;
   final String relationship;
   final int colorIndex;
-  final String? photoBase64; // New field for profile photo
+  final String? photoBase64;
 
   EmergencyContact({
     required this.id,
@@ -70,6 +72,7 @@ class EmergencyService extends ChangeNotifier {
   // Constants
   static const String _contactsKey = 'emergency_contacts';
   static const String _pendingSosKey = 'pending_sos_queue';
+  static const int _maxPendingSos = 10;
   final _api = ApiService();
 
   // Initialize
@@ -91,13 +94,17 @@ class EmergencyService extends ChangeNotifier {
     }
 
     // 2. Fallback to Local
-    print("API unreachable, loading local contacts...");
+    AppLogger.info(LogCategory.sos, 'API unreachable, loading local contacts');
     final prefs = await SharedPreferences.getInstance();
     final String? contactsJson = prefs.getString(_contactsKey);
     if (contactsJson != null) {
-      final List<dynamic> decoded = jsonDecode(contactsJson);
-      _contacts = decoded.map((e) => EmergencyContact.fromJson(e)).toList();
-      notifyListeners();
+      try {
+        final List<dynamic> decoded = jsonDecode(contactsJson);
+        _contacts = decoded.map((e) => EmergencyContact.fromJson(e)).toList();
+        notifyListeners();
+      } catch (e) {
+        AppLogger.error(LogCategory.sos, 'Failed to parse local contacts: $e');
+      }
     }
   }
 
@@ -134,7 +141,6 @@ class EmergencyService extends ChangeNotifier {
 
     // Sync to Backend
     await _api.addContact(newContact.toJson());
-    // In a real app, we might update the ID from response, but UUID is fine for now
   }
 
   // Remove Contact
@@ -149,6 +155,7 @@ class EmergencyService extends ChangeNotifier {
 
   // 🚨 TRIGGER SOS 🚨
   /// Returns true if SOS was successfully sent (SMS + backend).
+  /// Protected against: rapid taps, concurrent calls, slow GPS, no GPS, offline.
   Future<bool> triggerSOS() async {
     // Anti-spam cooldown
     if (cooldownRemaining > 0) {
@@ -157,11 +164,13 @@ class EmergencyService extends ChangeNotifier {
       return false;
     }
 
-    if (_isSending) return false; // Already in progress
+    if (_isSending) return false; // Already in progress — rapid tap guard
     _isSending = true;
     _lastStatus = "Starting Emergency sequence...";
     notifyListeners();
 
+    // Generate idempotency key for this SOS trigger
+    final idempotencyKey = const Uuid().v4();
     bool success = false;
 
     try {
@@ -169,7 +178,7 @@ class EmergencyService extends ChangeNotifier {
         throw Exception("No emergency contacts added!");
       }
 
-      // 1. Get Location
+      // 1. Get Location — with aggressive timeout and fallback
       _lastStatus = "Fetching location...";
       notifyListeners();
 
@@ -183,12 +192,23 @@ class EmergencyService extends ChangeNotifier {
             const Duration(seconds: 5),
           );
         } catch (e) {
-          print("High accuracy GPS failed: $e. Trying last known...");
-          position = await Geolocator.getLastKnownPosition();
+          AppLogger.warn(LogCategory.sos, 'High accuracy GPS failed: $e');
+          // Fallback to last known — also with timeout
+          try {
+            position = await Geolocator.getLastKnownPosition().timeout(
+              const Duration(seconds: 3),
+            );
+          } catch (e2) {
+            AppLogger.warn(
+              LogCategory.sos,
+              'Last known position also failed: $e2',
+            );
+            // Continue without location — SOS is more important
+          }
         }
       } else {
         await Future.delayed(const Duration(seconds: 1));
-        print("Mocking location for Windows/Web");
+        AppLogger.info(LogCategory.sos, 'Mocking location for Windows/Web');
       }
 
       // 2. Construct Message
@@ -232,7 +252,7 @@ class EmergencyService extends ChangeNotifier {
           }
           result = "Sent via Native Android Manager";
         } catch (e) {
-          print("Native SMS failed: $e. Fallback to URL launcher.");
+          AppLogger.warn(LogCategory.sos, 'Native SMS failed: $e');
           _lastStatus = "Native failed. Opening SMS app...";
           notifyListeners();
 
@@ -264,6 +284,7 @@ class EmergencyService extends ChangeNotifier {
       final backendOk = await _api.triggerSos(
         lat: position?.latitude,
         lng: position?.longitude,
+        idempotencyKey: idempotencyKey,
       );
 
       if (!backendOk) {
@@ -271,6 +292,7 @@ class EmergencyService extends ChangeNotifier {
         await _queuePendingSos(
           lat: position?.latitude,
           lng: position?.longitude,
+          idempotencyKey: idempotencyKey,
         );
         _lastStatus = "✅ SMS sent. Server sync queued for retry.";
       } else {
@@ -280,10 +302,13 @@ class EmergencyService extends ChangeNotifier {
       // Mark cooldown
       _lastSosTime = DateTime.now();
       success = true;
-      print("SOS Result: $result | Backend: $backendOk");
+      AppLogger.info(
+        LogCategory.sos,
+        'SOS Result: $result | Backend: $backendOk',
+      );
     } catch (e) {
       _lastStatus = "❌ Failed: $e";
-      print("SOS Error: $e");
+      AppLogger.error(LogCategory.sos, 'SOS Error: $e');
     } finally {
       _isSending = false;
       notifyListeners();
@@ -292,22 +317,37 @@ class EmergencyService extends ChangeNotifier {
   }
 
   /// Queue a failed SOS for retry when network returns
-  Future<void> _queuePendingSos({double? lat, double? lng}) async {
+  Future<void> _queuePendingSos({
+    double? lat,
+    double? lng,
+    String? idempotencyKey,
+  }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final pending = prefs.getStringList(_pendingSosKey) ?? [];
+
+      // Bound queue size
+      if (pending.length >= _maxPendingSos) {
+        AppLogger.warn(
+          LogCategory.sos,
+          'Pending SOS queue full, dropping oldest',
+        );
+        pending.removeAt(0);
+      }
+
       final payload = jsonEncode({
         'latitude': lat,
         'longitude': lng,
         'message': 'Emergency SOS triggered from app',
         'timestamp': DateTime.now().toIso8601String(),
+        'idempotency_key': idempotencyKey,
         'retries': 0,
       });
       pending.add(payload);
       await prefs.setStringList(_pendingSosKey, pending);
-      print("SOS queued for offline retry");
+      AppLogger.info(LogCategory.sos, 'SOS queued for offline retry');
     } catch (e) {
-      print("Failed to queue SOS: $e");
+      AppLogger.error(LogCategory.sos, 'Failed to queue SOS: $e');
     }
   }
 
@@ -320,28 +360,42 @@ class EmergencyService extends ChangeNotifier {
 
       final remaining = <String>[];
       for (final item in pending) {
-        final data = jsonDecode(item) as Map<String, dynamic>;
-        final retries = (data['retries'] as int?) ?? 0;
+        try {
+          final data = jsonDecode(item) as Map<String, dynamic>;
+          final retries = (data['retries'] as int?) ?? 0;
 
-        if (retries >= 3) continue; // Drop after 3 attempts
+          if (retries >= 3) {
+            AppLogger.warn(
+              LogCategory.sos,
+              'Dropping SOS after 3 failed retries',
+            );
+            continue; // Drop after 3 attempts
+          }
 
-        final ok = await _api.triggerSos(
-          lat: data['latitude'] as double?,
-          lng: data['longitude'] as double?,
-        );
+          final ok = await _api.triggerSos(
+            lat: data['latitude'] as double?,
+            lng: data['longitude'] as double?,
+            idempotencyKey: data['idempotency_key'] as String?,
+          );
 
-        if (!ok) {
-          // Increment retry count and keep
-          data['retries'] = retries + 1;
-          remaining.add(jsonEncode(data));
-        } else {
-          print("Retried pending SOS successfully");
+          if (!ok) {
+            // Increment retry count and keep
+            data['retries'] = retries + 1;
+            remaining.add(jsonEncode(data));
+          } else {
+            AppLogger.info(LogCategory.sos, 'Retried pending SOS successfully');
+          }
+        } catch (e) {
+          AppLogger.error(
+            LogCategory.sos,
+            'Error retrying pending SOS item: $e',
+          );
         }
       }
 
       await prefs.setStringList(_pendingSosKey, remaining);
     } catch (e) {
-      print("Pending SOS retry error: $e");
+      AppLogger.error(LogCategory.sos, 'Pending SOS retry error: $e');
     }
   }
 
@@ -350,7 +404,6 @@ class EmergencyService extends ChangeNotifier {
     bool serviceEnabled;
     LocationPermission permission;
 
-    // Test if location services are enabled.
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       return Future.error('Location services are disabled.');

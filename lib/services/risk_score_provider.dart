@@ -3,14 +3,16 @@
 /// - Fetches risk score from backend on init
 /// - Auto-refreshes every 5 minutes (lightweight polling)
 /// - Exposes `refresh()` for event-driven updates (scam/SOS)
-/// - Smooth animated transitions via `score` getter
 /// - Guardian can fetch elder-specific scores
+///
+/// HARDENED: guarded notifyListeners, safe timer cleanup, disposed-state check.
 library;
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/risk_model.dart';
 import 'api_service.dart';
+import 'app_logger.dart';
 
 class RiskScoreProvider extends ChangeNotifier {
   static final RiskScoreProvider _instance = RiskScoreProvider._internal();
@@ -24,6 +26,7 @@ class RiskScoreProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   Timer? _syncTimer;
+  bool _disposed = false;
 
   // ── Getters ──
   RiskModel get risk => _risk;
@@ -38,8 +41,20 @@ class RiskScoreProvider extends ChangeNotifier {
   // ── Sync interval ──
   static const Duration _syncInterval = Duration(minutes: 5);
 
+  /// Guarded notifyListeners — safe against disposed state.
+  void _safeNotify() {
+    if (!_disposed) {
+      try {
+        notifyListeners();
+      } catch (_) {
+        // Swallow: widget tree may have been disposed
+      }
+    }
+  }
+
   /// Initialize and start periodic sync.
   Future<void> init() async {
+    _disposed = false;
     await refresh();
     _startPeriodicSync();
   }
@@ -48,7 +63,7 @@ class RiskScoreProvider extends ChangeNotifier {
   Future<void> refresh() async {
     _isLoading = true;
     _error = null;
-    notifyListeners();
+    _safeNotify();
 
     try {
       final result = await _api.getRiskScore();
@@ -58,10 +73,10 @@ class RiskScoreProvider extends ChangeNotifier {
       }
     } catch (e) {
       _error = 'Failed to sync risk score';
-      debugPrint('⚠️ RiskScoreProvider.refresh failed: $e');
+      AppLogger.warn(LogCategory.risk, 'RiskScoreProvider.refresh failed: $e');
     } finally {
       _isLoading = false;
-      notifyListeners();
+      _safeNotify();
     }
   }
 
@@ -70,7 +85,7 @@ class RiskScoreProvider extends ChangeNotifier {
     try {
       return await _api.getElderRiskScore(elderId);
     } catch (e) {
-      debugPrint('⚠️ getElderRisk($elderId) failed: $e');
+      AppLogger.warn(LogCategory.risk, 'getElderRisk($elderId) failed: $e');
       return null;
     }
   }
@@ -90,7 +105,9 @@ class RiskScoreProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _syncTimer?.cancel();
+    _syncTimer = null;
     super.dispose();
   }
 }

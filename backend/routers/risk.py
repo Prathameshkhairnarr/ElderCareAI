@@ -1,6 +1,11 @@
 """
-Risk score endpoints.
+Risk score endpoints. (Production Hardened)
+
+Changes:
+- Wrapped handle_sms_event in try/except with db.rollback()
+- Structured logging
 """
+import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -11,6 +16,7 @@ from schemas.schemas import RiskResponse, SmsRiskEvent
 from services.auth_service import get_current_user
 from services.risk_service import get_current_risk, resolve_risk
 
+logger = logging.getLogger("eldercare")
 router = APIRouter(tags=["Risk Score"])
 
 
@@ -54,8 +60,13 @@ def resolve_risk_endpoint(
     db: Session = Depends(get_db),
 ):
     """Mark a specific risk entry as resolved (e.g. user handled the scam)."""
-    resolve_risk(db, current_user.id, entry_id)
-    return {"status": "resolved", "id": entry_id}
+    try:
+        resolve_risk(db, current_user.id, entry_id)
+        return {"status": "resolved", "id": entry_id}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"resolve_risk error for user {current_user.id}, entry {entry_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to resolve risk entry")
 
 
 @router.post("/risk/sms-event")
@@ -65,42 +76,50 @@ def handle_sms_event(
     db: Session = Depends(get_db),
 ):
     """Real-time SMS risk event handler with idempotency and robust formulas."""
-    
-    # 1. Idempotency Check
-    existing = db.query(ProcessedMessage).filter_by(msg_hash=event.message_hash).first()
-    if existing:
-        return {"status": "ignored", "reason": "duplicate"}
+    try:
+        # 1. Idempotency Check
+        existing = db.query(ProcessedMessage).filter_by(msg_hash=event.message_hash).first()
+        if existing:
+            logger.info(f"SMS event duplicate suppressed for user {current_user.id}")
+            return {"status": "ignored", "reason": "duplicate"}
 
-    # 2. Store Message Metadata
-    new_msg = ProcessedMessage(msg_hash=event.message_hash, label=event.label)
-    db.add(new_msg)
+        # 2. Store Message Metadata
+        new_msg = ProcessedMessage(msg_hash=event.message_hash, label=event.label)
+        db.add(new_msg)
 
-    # 3. Apply Risk Formula
-    profile = db.query(RiskState).filter_by(user_id=current_user.id).first()
-    if not profile:
-        profile = RiskState(user_id=current_user.id, current_score=0)
-        db.add(profile)
-    
-    impact = -1 if event.label == 'SAFE' else (30 if event.label == 'PHISHING_LINK' else 15)
-    
-    # Check multiplier (if last scam was less than 2 hours ago)
-    multiplier = 1.0
-    now = datetime.now(timezone.utc)
-    # Ensure profile.last_scam_at is offset-aware before comparing if we use utcnow
-    if profile.last_scam_at:
-        # If naive, make it aware
-        last_scam = profile.last_scam_at
-        if last_scam.tzinfo is None:
-            last_scam = last_scam.replace(tzinfo=timezone.utc)
-        if (now - last_scam).total_seconds() < 7200:
-            multiplier = 1.5
+        # 3. Apply Risk Formula
+        profile = db.query(RiskState).filter_by(user_id=current_user.id).first()
+        if not profile:
+            profile = RiskState(user_id=current_user.id, current_score=0)
+            db.add(profile)
+            db.flush()  # Ensure profile is available for update
 
-    if impact > 0:
-        profile.last_scam_at = now
+        impact = -1 if event.label == 'SAFE' else (30 if event.label == 'PHISHING_LINK' else 15)
 
-    # Update Score
-    raw_new_score = profile.current_score + (impact * multiplier)
-    profile.current_score = max(0, min(100, int(raw_new_score)))
+        # Check multiplier (if last scam was less than 2 hours ago)
+        multiplier = 1.0
+        now = datetime.now(timezone.utc)
+        if profile.last_scam_at:
+            last_scam = profile.last_scam_at
+            if last_scam.tzinfo is None:
+                last_scam = last_scam.replace(tzinfo=timezone.utc)
+            if (now - last_scam).total_seconds() < 7200:
+                multiplier = 1.5
 
-    db.commit()
-    return {"status": "success", "new_score": profile.current_score}
+        if impact > 0:
+            profile.last_scam_at = now
+
+        # Update Score — always bounded 0–100
+        raw_new_score = profile.current_score + (impact * multiplier)
+        profile.current_score = max(0, min(100, int(raw_new_score)))
+
+        db.commit()
+        logger.info(f"SMS risk event processed for user {current_user.id}: label={event.label}, new_score={profile.current_score}")
+        return {"status": "success", "new_score": profile.current_score}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"handle_sms_event error for user {current_user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process SMS risk event")
