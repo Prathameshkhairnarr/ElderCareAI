@@ -1,0 +1,6 @@
+{
+  "status": 500,
+  "content": {
+    "detail": "(sqlite3.OperationalError) disk I/O error\n[SQL: SELECT users.id AS users_id, users.name AS users_name, users.phone AS users_phone, users.password_hash AS users_password_hash, users.role AS users_role, users.created_at AS users_created_at \nFROM users \nWHERE users.phone = ?\n LIMIT ? OFFSET ?]\n[parameters: ('0987654321', 1, 0)]\n(Background on this error at: https://sqlalche.me/e/20/e3q8)"
+  }
+}

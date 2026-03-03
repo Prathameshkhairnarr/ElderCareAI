@@ -1,0 +1,9 @@
+Engine URL: sqlite:///./eldercare.db
+Called Base.metadata.create_all
+Columns in 'users' table:
+(0, 'id', 'INTEGER', 1, None, 1)
+(1, 'name', 'VARCHAR(120)', 1, None, 0)
+(2, 'phone', 'VARCHAR(20)', 1, None, 0)
+(3, 'password_hash', 'VARCHAR(256)', 1, None, 0)
+(4, 'role', 'VARCHAR(20)', 1, None, 0)
+(5, 'created_at', 'DATETIME', 0, None, 0)
