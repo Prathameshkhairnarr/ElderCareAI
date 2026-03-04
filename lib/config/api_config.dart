@@ -73,4 +73,15 @@ class ApiConfig {
   /// ElevenLabs TTS endpoint.
   static String get elevenLabsEndpoint =>
       'https://api.elevenlabs.io/v1/text-to-speech/$elevenLabsVoiceId';
+
+  // ── APILayer Number Verification API ──
+  static final String abstractPhoneApiKey =
+      dotenv.env['APILAYER_API_KEY'] ?? '';
+
+  /// Whether APILayer Number Verification API is configured.
+  static bool get isAbstractPhoneEnabled => abstractPhoneApiKey.isNotEmpty;
+
+  /// APILayer Number Verification endpoint.
+  static String abstractPhoneEndpoint(String phone) =>
+      'https://api.apilayer.com/number_verification/validate?number=$phone';
 }
