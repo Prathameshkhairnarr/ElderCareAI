@@ -77,3 +77,35 @@ def mark_alert_read(
     alert.is_read = True
     db.commit()
     return {"status": "success"}
+
+
+@router.delete("/alerts/{alert_id}", status_code=204)
+def delete_alert(
+    alert_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete an alert by ID."""
+    alert = (
+        db.query(Alert)
+        .filter(Alert.id == alert_id, Alert.user_id == current_user.id)
+        .first()
+    )
+    if not alert:
+        # Check if current user is a guardian of the alert's owner
+        guardian_entry = (
+            db.query(Guardian)
+            .join(User, Guardian.user_id == User.id)
+            .join(Alert, Alert.user_id == User.id)
+            .filter(Alert.id == alert_id)
+            .filter(Guardian.phone == current_user.phone)
+            .first()
+        )
+        if guardian_entry:
+            alert = db.query(Alert).filter(Alert.id == alert_id).first()
+        else:
+            raise HTTPException(status_code=404, detail="Alert not found.")
+
+    db.delete(alert)
+    db.commit()
+    return None

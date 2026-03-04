@@ -36,6 +36,43 @@ class _AlertsHistoryScreenState extends State<AlertsHistoryScreen> {
     }
   }
 
+  Future<void> _deleteAlert(int alertId, int index) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Alert'),
+        content: const Text('Kya aap sure hain ki aap is alert ko delete karna chahte hain?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final success = await _api.deleteAlert(alertId);
+    if (mounted) {
+      if (success) {
+        setState(() => _alerts.removeAt(index));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Alert deleted successfully')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to delete alert')),
+        );
+      }
+    }
+  }
+
   Color _getSeverityColor(String severity) {
     switch (severity.toLowerCase()) {
       case 'critical':
@@ -141,6 +178,16 @@ class _AlertsHistoryScreenState extends State<AlertsHistoryScreen> {
                                         fontWeight: FontWeight.bold,
                                         color: color,
                                       ),
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  IconButton(
+                                    onPressed: () => _deleteAlert(alert['id'], index),
+                                    icon: const Icon(Icons.delete_outline_rounded),
+                                    color: Colors.red[400],
+                                    tooltip: 'Delete Alert',
+                                    style: IconButton.styleFrom(
+                                      backgroundColor: Colors.red.withOpacity(0.1),
                                     ),
                                   ),
                                 ],

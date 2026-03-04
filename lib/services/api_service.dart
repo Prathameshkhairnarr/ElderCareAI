@@ -360,6 +360,19 @@ class ApiService {
     }
   }
 
+  Future<bool> deleteAlert(int alertId) async {
+    try {
+      final result = await _http.delete(
+        Uri.parse('$_baseUrl/alerts/$alertId'),
+        headers: _headers,
+      );
+      return result.statusCode == 204 || result.isSuccess;
+    } catch (e) {
+      AppLogger.error(LogCategory.network, 'deleteAlert error: $e');
+      return false;
+    }
+  }
+
   // ── Guardian Connect ─────────────────────────────────
   Future<List<GuardianModel>> getGuardians() async {
     try {

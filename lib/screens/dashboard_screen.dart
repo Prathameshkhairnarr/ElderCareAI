@@ -14,6 +14,7 @@ import 'alerts_history_screen.dart';
 import 'health_profile_view_screen.dart';
 import 'guardian_setup_screen.dart';
 import '../voice/assistant_widget.dart';
+import 'ai_doctor_screen.dart';
 
 import 'settings/settings_screen.dart';
 
@@ -84,45 +85,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      // Use IndexedStack to preserve state of all tabs
-      body: IndexedStack(
-        index: _selectedNavIndex,
-        children: [
-          _buildHomeTab(), // 0: Home
-          const SmsAnalyzerScreen(), // 1: SMS
-          const SosScreen(), // 2: SOS
-          const HealthProfileViewScreen(), // 3: Health
-          const SettingsScreen(), // 4: Settings
-        ],
-      ),
-      floatingActionButton: const AssistantWidget(),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedNavIndex,
-        onDestinationSelected: _onNavTap,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_rounded),
-            label: 'Home',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.sms_rounded),
-            label: 'SMS Scan',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.emergency_rounded),
-            label: 'SOS',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.favorite_rounded),
-            label: 'Health',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_rounded),
-            label: 'Settings',
-          ),
-        ],
+    return PopScope(
+      canPop: _selectedNavIndex == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) {
+          // Not on Home tab — switch to Home instead of exiting
+          setState(() => _selectedNavIndex = 0);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        // Use IndexedStack to preserve state of all tabs
+        body: IndexedStack(
+          index: _selectedNavIndex,
+          children: [
+            _buildHomeTab(), // 0: Home
+            const AiDoctorScreen(), // 1: AI Doctor
+            const SosScreen(), // 2: SOS
+            const HealthProfileViewScreen(), // 3: Health
+            const SettingsScreen(), // 4: Settings
+          ],
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _selectedNavIndex,
+          onDestinationSelected: _onNavTap,
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.dashboard_rounded),
+              label: 'Home',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.medical_services_rounded),
+              label: 'AI Doctor',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.emergency_rounded),
+              label: 'SOS',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.favorite_rounded),
+              label: 'Health',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.settings_rounded),
+              label: 'Settings',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -380,7 +389,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         title: 'SMS Analyzer',
         subtitle: 'Scan messages for fraud & scams',
         color: const Color(0xFF7C4DFF),
-        onTap: () => setState(() => _selectedNavIndex = 1),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const SmsAnalyzerScreen()),
+        ),
       ),
       _DashCardData(
         title: 'Call Protection',
@@ -416,6 +428,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
         subtitle: 'Vitals, profile & wellness',
         color: const Color(0xFFEC407A),
         onTap: () => setState(() => _selectedNavIndex = 3),
+      ),
+      _DashCardData(
+        icon: Icons.medical_services_rounded,
+        title: 'AI Doctor',
+        subtitle: 'Voice assistant & health tools',
+        color: const Color(0xFF26A69A),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const AiDoctorScreen()),
+        ),
       ),
     ];
 
@@ -456,29 +478,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     // DEBUG: Simulate SOS Button (Windows Testing)
-    base.add(
-      _DashCardData(
-        icon: Icons.bug_report_rounded,
-        title: 'Simulate SOS',
-        subtitle: 'Test SOS Logic (Debug)',
-        color: Colors.grey,
-        onTap: () async {
-          // Simulate the flow without native calls
-          final service = EmergencyService();
-          try {
-            await service.triggerSOS();
-          } catch (e) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  "SOS Triggered (Native failed as expected on Win): $e",
-                ),
-              ),
-            );
-          }
-        },
-      ),
-    );
+    // Commented out — re-enable when needed for testing
+    // base.add(
+    //   _DashCardData(
+    //     icon: Icons.bug_report_rounded,
+    //     title: 'Simulate SOS',
+    //     subtitle: 'Test SOS Logic (Debug)',
+    //     color: Colors.grey,
+    //     onTap: () async {
+    //       // Simulate the flow without native calls
+    //       final service = EmergencyService();
+    //       try {
+    //         await service.triggerSOS();
+    //       } catch (e) {
+    //         ScaffoldMessenger.of(context).showSnackBar(
+    //           SnackBar(
+    //             content: Text(
+    //               "SOS Triggered (Native failed as expected on Win): $e",
+    //             ),
+    //           ),
+    //         );
+    //       }
+    //     },
+    //   ),
+    // );
 
     return base;
   }

@@ -4,6 +4,7 @@ import 'screens/dashboard_screen.dart';
 import 'screens/guardian_dashboard_screen.dart';
 import 'screens/sms_analyzer_screen.dart';
 import 'screens/sos_screen.dart';
+import 'screens/ai_doctor_screen.dart';
 import 'screens/health_profile_view_screen.dart';
 import 'widgets/page_transition.dart';
 
@@ -13,6 +14,7 @@ class AppRoutes {
   static const guardianDashboard = '/guardian-dashboard';
   static const smsAnalyzer = '/sms-analyzer';
   static const sos = '/sos';
+  static const aiDoctor = '/ai-doctor';
   static const healthProfileView = '/health-profile-view';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
@@ -27,6 +29,8 @@ class AppRoutes {
         return PageTransition(page: const SmsAnalyzerScreen());
       case sos:
         return PageTransition(page: const SosScreen());
+      case aiDoctor:
+        return PageTransition(page: const AiDoctorScreen());
       case healthProfileView:
         return PageTransition(page: const HealthProfileViewScreen());
       default:
