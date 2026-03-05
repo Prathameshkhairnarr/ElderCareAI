@@ -8,6 +8,7 @@ import '../services/emergency_service.dart';
 import '../services/health_profile_service.dart';
 import '../services/settings_service.dart';
 import '../services/system_status_manager.dart';
+import '../services/user_memory_service.dart';
 
 /// Parsed action from AI response.
 class VoiceAction {
@@ -192,6 +193,31 @@ class ActionHandler {
 
         case 'save_user_name':
           return await _saveUserName(action.value?.toString() ?? '', hindi);
+
+        case 'save_user_age':
+          return await _saveUserDetail(
+            UserMemoryService.kAge,
+            action.value?.toString() ?? '',
+            hindi ? 'umar' : 'age',
+            hindi,
+          );
+
+        case 'save_user_city':
+          return await _saveUserDetail(
+            UserMemoryService.kCity,
+            action.value?.toString() ?? '',
+            hindi ? 'sheher' : 'city',
+            hindi,
+          );
+
+        case 'navigate':
+          // Phase 6: navigation handled by voice_controller
+          return ActionResult(
+            success: true,
+            spokenResponse: hindi
+                ? 'Screen khol rahi hoon.'
+                : 'Opening screen.',
+          );
 
         default:
           return ActionResult(
@@ -412,6 +438,8 @@ class ActionHandler {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_userNameKey, name);
+      // Also persist to UserMemoryService for AI context
+      await UserMemoryService.instance.set(UserMemoryService.kName, name);
     } catch (_) {}
 
     AppLogger.info(LogCategory.lifecycle, '[ACTION] User name saved: $name');
@@ -421,6 +449,35 @@ class ActionHandler {
       spokenResponse: hindi
           ? '$name ji, main aapka naam yaad rakhungi.'
           : '$name, I will remember your name.',
+    );
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  USER DETAIL — via UserMemoryService
+  // ══════════════════════════════════════════════════════
+
+  Future<ActionResult> _saveUserDetail(
+    String key,
+    String value,
+    String label,
+    bool hindi,
+  ) async {
+    if (value.isEmpty) {
+      return ActionResult(
+        success: false,
+        spokenResponse: hindi
+            ? '$label samajh nahi aaya, dobara boliye.'
+            : 'Could not understand the $label, please say again.',
+      );
+    }
+
+    await UserMemoryService.instance.set(key, value);
+
+    return ActionResult(
+      success: true,
+      spokenResponse: hindi
+          ? 'Aapka $label $value yaad rakh liya hai.'
+          : 'I will remember your $label as $value.',
     );
   }
 }

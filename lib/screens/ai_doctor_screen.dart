@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../voice/voice_controller.dart';
+import '../voice/wake_word_service.dart';
 import '../services/emergency_service.dart';
 import '../services/api_service.dart';
 import '../services/health_profile_service.dart';
+import '../widgets/health_profile_card.dart';
 
 // ═══════════════════════════════════════════════════════════════
 //  AI DOCTOR SCREEN
@@ -20,7 +22,24 @@ class _AiDoctorScreenState extends State<AiDoctorScreen> {
   final VoiceController _voice = VoiceController();
 
   @override
+  void initState() {
+    super.initState();
+    _initWakeWord();
+  }
+
+  Future<void> _initWakeWord() async {
+    // Initialize wake word with 'Doctor' trigger
+    final wakeWord = WakeWordService.instance;
+    wakeWord.onWakeWordDetected = () {
+      // When user says "Hey Doctor", auto-tap mic
+      _voice.onMicTap();
+    };
+    await wakeWord.start();
+  }
+
+  @override
   void dispose() {
+    WakeWordService.instance.stop();
     _voice.dispose();
     super.dispose();
   }
@@ -51,6 +70,8 @@ class _AiDoctorScreenState extends State<AiDoctorScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _VoiceAssistantCard(controller: _voice),
+            const SizedBox(height: 20),
+            const HealthProfileCard(),
             const SizedBox(height: 20),
             const _MedicationReminderCard(),
             const SizedBox(height: 20),
@@ -105,7 +126,7 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
   void _onVoiceChange() {
     if (!mounted) return;
     setState(() {});
-    if (_vc.isListening) {
+    if (_vc.isListening || _vc.isConversationActive) {
       _pulseCtrl.repeat(reverse: true);
     } else {
       _pulseCtrl.stop();
@@ -115,8 +136,22 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
 
   Future<void> _onMicTap() async {
     await _vc.onMicTap();
+    // Resume wake word after interaction
+    if (_vc.state == VoiceState.idle) {
+      WakeWordService.instance.resume();
+    }
     if (_vc.response.isNotEmpty && mounted) {
       _showResponseSheet();
+    }
+  }
+
+  void _onMicLongPress() {
+    if (_vc.isConversationActive) {
+      _vc.stopConversation();
+      WakeWordService.instance.resume();
+    } else {
+      WakeWordService.instance.stop();
+      _vc.startConversation();
     }
   }
 
@@ -184,11 +219,19 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
     );
   }
 
-  Widget _sheetLabel(IconData icon, String text, ColorScheme cs,
-      {Color? iconColor}) {
+  Widget _sheetLabel(
+    IconData icon,
+    String text,
+    ColorScheme cs, {
+    Color? iconColor,
+  }) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: iconColor ?? cs.onSurface.withValues(alpha: 0.5)),
+        Icon(
+          icon,
+          size: 18,
+          color: iconColor ?? cs.onSurface.withValues(alpha: 0.5),
+        ),
         const SizedBox(width: 8),
         Text(
           text,
@@ -203,7 +246,11 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
   }
 
   Widget _sheetBubble(
-      String text, Color bg, Color textColor, Color? borderColor) {
+    String text,
+    Color bg,
+    Color textColor,
+    Color? borderColor,
+  ) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -290,12 +337,13 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
             ),
             const SizedBox(height: 28),
 
-            // Mic button with pulse
+            // Mic button with pulse — supports long-press for conversation
             AnimatedBuilder(
               animation: _pulseCtrl,
               builder: (context, child) {
-                final scale =
-                    _vc.isListening ? 1.0 + (_pulseCtrl.value * 0.10) : 1.0;
+                final scale = _vc.isListening || _vc.isConversationActive
+                    ? 1.0 + (_pulseCtrl.value * 0.10)
+                    : 1.0;
                 return Transform.scale(
                   scale: scale,
                   child: Container(
@@ -303,18 +351,31 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: statusColor.withValues(alpha: 0.35),
-                          blurRadius: _vc.isListening ? 24 : 12,
-                          spreadRadius: _vc.isListening ? 6 : 0,
+                          color:
+                              (_vc.isConversationActive
+                                      ? Colors.green
+                                      : statusColor)
+                                  .withValues(alpha: 0.35),
+                          blurRadius:
+                              _vc.isListening || _vc.isConversationActive
+                              ? 24
+                              : 12,
+                          spreadRadius:
+                              _vc.isListening || _vc.isConversationActive
+                              ? 6
+                              : 0,
                         ),
                       ],
                     ),
                     child: Material(
                       shape: const CircleBorder(),
-                      color: statusColor,
+                      color: _vc.isConversationActive
+                          ? Colors.green
+                          : statusColor,
                       elevation: 4,
                       child: InkWell(
                         onTap: _vc.isProcessing ? null : _onMicTap,
+                        onLongPress: _vc.isProcessing ? null : _onMicLongPress,
                         customBorder: const CircleBorder(),
                         splashColor: Colors.white24,
                         child: SizedBox(
@@ -333,7 +394,9 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
                                 : Icon(
                                     _vc.isListening
                                         ? Icons.stop_rounded
-                                        : Icons.mic_rounded,
+                                        : (_vc.isConversationActive
+                                              ? Icons.chat_rounded
+                                              : Icons.mic_rounded),
                                     size: 38,
                                     color: Colors.white,
                                   ),
@@ -351,26 +414,48 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
               child: Container(
-                key: ValueKey(statusText),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                key: ValueKey('$statusText-${_vc.isConversationActive}'),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.12),
+                  color: (_vc.isConversationActive ? Colors.green : statusColor)
+                      .withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: statusColor.withValues(alpha: 0.25),
+                    color:
+                        (_vc.isConversationActive ? Colors.green : statusColor)
+                            .withValues(alpha: 0.25),
                   ),
                 ),
                 child: Text(
-                  statusText,
+                  _vc.isConversationActive && _vc.state == VoiceState.idle
+                      ? '🟢 Conversation Active'
+                      : statusText,
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: statusColor,
+                    color: _vc.isConversationActive
+                        ? Colors.green
+                        : statusColor,
                   ),
                 ),
               ),
             ),
+
+            // Hint text
+            if (!_vc.isConversationActive && _vc.state == VoiceState.idle)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  'Long-press mic for conversation mode',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: cs.onSurface.withValues(alpha: 0.4),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -437,8 +522,11 @@ class _MedicationReminderCard extends StatelessWidget {
                     color: accentColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Icon(Icons.medication_rounded,
-                      color: accentColor, size: 24),
+                  child: const Icon(
+                    Icons.medication_rounded,
+                    color: accentColor,
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -452,8 +540,10 @@ class _MedicationReminderCard extends StatelessWidget {
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: accentColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(12),
@@ -472,74 +562,82 @@ class _MedicationReminderCard extends StatelessWidget {
             const SizedBox(height: 18),
 
             // Medication list
-            ...medications.map((med) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: cs.surface.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: accentColor.withValues(alpha: 0.12),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.circle, size: 10, color: accentColor),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                med['name']!,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: cs.onSurface,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                med['dosage']!,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color:
-                                      cs.onSurface.withValues(alpha: 0.5),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: accentColor.withValues(alpha: 0.10),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.access_time_rounded,
-                                  size: 14, color: accentColor),
-                              const SizedBox(width: 4),
-                              Text(
-                                med['time']!,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: accentColor,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+            ...medications.map(
+              (med) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: cs.surface.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: accentColor.withValues(alpha: 0.12),
                     ),
                   ),
-                )),
+                  child: Row(
+                    children: [
+                      Icon(Icons.circle, size: 10, color: accentColor),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              med['name']!,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: cs.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              med['dosage']!,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: cs.onSurface.withValues(alpha: 0.5),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: accentColor.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.access_time_rounded,
+                              size: 14,
+                              color: accentColor,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              med['time']!,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: accentColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -692,8 +790,11 @@ class _HealthCheckCardState extends State<_HealthCheckCard> {
                     color: const Color(0xFF42A5F5).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Icon(Icons.monitor_heart_rounded,
-                      color: Color(0xFF42A5F5), size: 24),
+                  child: const Icon(
+                    Icons.monitor_heart_rounded,
+                    color: Color(0xFF42A5F5),
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Text(
@@ -722,9 +823,7 @@ class _HealthCheckCardState extends State<_HealthCheckCard> {
                   )
                 : Row(
                     children: metrics
-                        .map((m) => Expanded(
-                              child: _buildMetricTile(m, cs),
-                            ))
+                        .map((m) => Expanded(child: _buildMetricTile(m, cs)))
                         .toList(),
                   ),
           ],
@@ -793,7 +892,6 @@ class _HealthMetric {
     required this.color,
   });
 }
-
 
 // ═══════════════════════════════════════════════════════════════
 //  4. SOS EMERGENCY BUTTON

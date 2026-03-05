@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'speech_service.dart';
 import 'voice_engine.dart';
@@ -5,7 +6,11 @@ import 'ai_brain_service.dart';
 import 'action_handler.dart';
 import 'language_detector.dart';
 import 'conversation_memory.dart';
+import 'offline_command_handler.dart';
+import 'emergency_detector.dart';
 import '../services/app_logger.dart';
+import '../services/user_memory_service.dart';
+import '../services/emergency_service.dart';
 
 /// Voice assistant states.
 enum VoiceState { idle, listening, processing, speaking, error }
@@ -28,6 +33,19 @@ class VoiceController extends ChangeNotifier {
   String _errorMessage = '';
   bool _initialized = false;
   bool _busy = false; // guard against rapid taps
+  bool _processingInProgress =
+      false; // guard against duplicate transcript processing
+
+  // ── Continuous conversation mode ──
+  bool _isConversationActive = false;
+  static const _relistenDelay = Duration(milliseconds: 600);
+
+  // ── Emergency detection state ──
+  bool _awaitingEmergencyConfirmation = false;
+
+  /// Navigation callback — set by the widget/screen that hosts the assistant.
+  /// Used for voice-driven screen navigation (Phase 6).
+  void Function(String routeName)? onNavigate;
 
   /// Last detected language — used for next STT locale hint.
   DetectedLanguage _lastLanguage = DetectedLanguage.hindi;
@@ -43,6 +61,9 @@ class VoiceController extends ChangeNotifier {
   bool get isSpeaking => _state == VoiceState.speaking;
   bool get hasError => _state == VoiceState.error;
 
+  /// Whether continuous conversation mode is active.
+  bool get isConversationActive => _isConversationActive;
+
   /// Whether AI mode is active (Gemini configured).
   bool get isAiEnabled => _ai.isAiEnabled;
 
@@ -56,6 +77,7 @@ class VoiceController extends ChangeNotifier {
       final sttReady = await _stt.initialize();
       await _voiceEngine.initialize();
       await ActionHandler.instance.loadUserName();
+      await UserMemoryService.instance.load();
       _initialized = sttReady;
       if (!sttReady) {
         _setError(
@@ -74,7 +96,7 @@ class VoiceController extends ChangeNotifier {
   //  PRIMARY ACTION — Tap to listen/stop
   // ══════════════════════════════════════════════
 
-  /// Called when user taps the mic button.
+  /// Called when user taps the mic button (short tap = single query).
   Future<void> onMicTap() async {
     if (_busy) return; // prevent rapid tap race conditions
     _busy = true;
@@ -89,6 +111,8 @@ class VoiceController extends ChangeNotifier {
           await _stopListening();
           break;
         case VoiceState.speaking:
+          // Tapping during speech stops TTS AND ends conversation mode
+          _isConversationActive = false;
           await _stopSpeaking();
           break;
         case VoiceState.processing:
@@ -98,6 +122,30 @@ class VoiceController extends ChangeNotifier {
     } finally {
       _busy = false;
     }
+  }
+
+  /// Start continuous conversation mode.
+  /// After each AI response, the assistant automatically re-listens.
+  Future<void> startConversation() async {
+    _isConversationActive = true;
+    notifyListeners();
+    AppLogger.info(
+      LogCategory.lifecycle,
+      '[VOICE] Continuous conversation mode STARTED',
+    );
+    await _startListening();
+  }
+
+  /// Stop continuous conversation mode.
+  void stopConversation() {
+    _isConversationActive = false;
+    _stt.cancel();
+    _voiceEngine.stop();
+    _setState(VoiceState.idle);
+    AppLogger.info(
+      LogCategory.lifecycle,
+      '[VOICE] Continuous conversation mode STOPPED',
+    );
   }
 
   // ── Listen ──
@@ -150,7 +198,19 @@ class VoiceController extends ChangeNotifier {
   //  AI-POWERED PROCESSING PIPELINE
   // ══════════════════════════════════════════════
 
+  /// Overall pipeline timeout — prevents infinite hangs.
+  static const _pipelineTimeout = Duration(seconds: 15);
+
   void _processTranscript(String text) async {
+    // ── Debounce: prevent duplicate processing from rapid STT callbacks ──
+    if (_processingInProgress) {
+      AppLogger.warn(
+        LogCategory.lifecycle,
+        '[VOICE] Ignoring duplicate _processTranscript call',
+      );
+      return;
+    }
+
     if (text.trim().isEmpty) {
       // Speak friendly retry instead of showing error
       _response = "Mujhe awaaz clear nahi mili, dobara boliyega.";
@@ -158,8 +218,41 @@ class VoiceController extends ChangeNotifier {
       return;
     }
 
+    _processingInProgress = true;
     _setState(VoiceState.processing);
 
+    // ── Stop STT immediately — mic must be off during processing/speaking ──
+    await _stt.cancel();
+
+    try {
+      await _processTranscriptInner(text).timeout(_pipelineTimeout);
+    } on TimeoutException {
+      AppLogger.error(
+        LogCategory.lifecycle,
+        '[VOICE] Pipeline timeout after ${_pipelineTimeout.inSeconds}s',
+      );
+      _response = "Thoda time lag raha hai. Dobara try karein.";
+      try {
+        await _speakResponse(_response, 'hi-IN');
+      } catch (_) {}
+    } catch (e) {
+      AppLogger.error(LogCategory.lifecycle, '[VOICE] Pipeline error: $e');
+      _response = "Kuch gadbad ho gayi. Dobara try karein.";
+      try {
+        await _speakResponse(_response, 'hi-IN');
+      } catch (_) {}
+    } finally {
+      _processingInProgress = false;
+      // Safety net: ensure we always return to idle if state got stuck
+      if (_state == VoiceState.processing) {
+        _setState(VoiceState.idle);
+      }
+    }
+  }
+
+  /// Inner processing logic — separated so the outer method can add
+  /// timeout + error safety net around it.
+  Future<void> _processTranscriptInner(String text) async {
     // ── Detect language ──
     final detected = LanguageDetector.detect(text);
     _lastLanguage = detected;
@@ -169,6 +262,73 @@ class VoiceController extends ChangeNotifier {
       LogCategory.lifecycle,
       '[VOICE] Detected language: ${detected.name}, TTS locale: $ttsLocale',
     );
+
+    // ── Step 0: Emergency detection (highest priority) ──
+    final emergency = EmergencyDetector.detect(text);
+    if (emergency.isEmergency) {
+      final isHindi = detected != DetectedLanguage.english;
+
+      if (_awaitingEmergencyConfirmation) {
+        // User confirmed emergency — check for "haan", "yes", "ha"
+        final lowerText = text.toLowerCase();
+        if (lowerText.contains('haan') ||
+            lowerText.contains('yes') ||
+            lowerText.contains('ha ') ||
+            lowerText.contains('haa') ||
+            lowerText.contains('ok') ||
+            lowerText.contains('bhejo')) {
+          _awaitingEmergencyConfirmation = false;
+          EmergencyService().triggerSOS();
+          _response = isHindi
+              ? 'SOS bhej diya gaya hai. Aapke emergency contacts ko alert hoga.'
+              : 'SOS has been sent. Your emergency contacts will be alerted.';
+          await _speakResponse(_response, ttsLocale);
+          return;
+        } else {
+          _awaitingEmergencyConfirmation = false;
+          _response = isHindi
+              ? 'Theek hai, SOS nahi bheja. Agar madad chahiye to mujhe bataiye.'
+              : 'OK, SOS not sent. Let me know if you need help.';
+          await _speakResponse(_response, ttsLocale);
+          return;
+        }
+      }
+
+      // First detection — ask for confirmation
+      _awaitingEmergencyConfirmation = true;
+      _response = EmergencyDetector.getConfirmationPrompt(emergency, isHindi);
+      await _speakResponse(_response, ttsLocale);
+      return;
+    } else {
+      // Reset if user says something normal
+      _awaitingEmergencyConfirmation = false;
+    }
+
+    // ── Step 1: Offline commands (instant, no network) ──
+    try {
+      final offlineResult = await OfflineCommandHandler.instance.tryHandle(
+        text,
+        detected,
+      );
+      if (offlineResult != null) {
+        _response = offlineResult.spokenResponse;
+        AppLogger.info(
+          LogCategory.lifecycle,
+          '[VOICE] Offline command: "$_response"',
+        );
+        // Handle navigation if offline command requests it
+        if (offlineResult.navigateTo != null && onNavigate != null) {
+          onNavigate!(offlineResult.navigateTo!);
+        }
+        await _speakResponse(_response, ttsLocale);
+        return;
+      }
+    } catch (e) {
+      AppLogger.warn(
+        LogCategory.lifecycle,
+        '[VOICE] Offline handler error: $e',
+      );
+    }
 
     // ── AI Brain (with automatic fallback) ──
     try {
@@ -204,7 +364,7 @@ class VoiceController extends ChangeNotifier {
       _response = detected == DetectedLanguage.english
           ? "Something went wrong. Please try again."
           : "Kuch gadbad ho gayi. Dobara try karein.";
-      _speakResponse(_response, ttsLocale);
+      await _speakResponse(_response, ttsLocale);
     }
   }
 
@@ -214,6 +374,8 @@ class VoiceController extends ChangeNotifier {
     String locale,
     dynamic emotion,
   ) async {
+    // ── Ensure STT is stopped before speaking ──
+    await _stt.cancel();
     _setState(VoiceState.speaking);
     try {
       // VoiceEngine handles text cleaning, ElevenLabs → flutter_tts fallback
@@ -221,14 +383,14 @@ class VoiceController extends ChangeNotifier {
     } catch (e) {
       AppLogger.error(LogCategory.lifecycle, '[VOICE] Speak error: $e');
     }
-    // Return to idle after speaking (unless disposed)
-    if (_state == VoiceState.speaking) {
-      _setState(VoiceState.idle);
-    }
+    // After speaking: auto-relisten or idle
+    await _afterSpeaking();
   }
 
   // ── Speak (plain, for fallback/retry) ──
   Future<void> _speakResponse(String text, String locale) async {
+    // ── Ensure STT is stopped before speaking ──
+    await _stt.cancel();
     _setState(VoiceState.speaking);
     try {
       // VoiceEngine handles text cleaning, ElevenLabs → flutter_tts fallback
@@ -236,14 +398,32 @@ class VoiceController extends ChangeNotifier {
     } catch (e) {
       AppLogger.error(LogCategory.lifecycle, '[VOICE] Speak error: $e');
     }
-    // Return to idle after speaking (unless disposed)
-    if (_state == VoiceState.speaking) {
+    // After speaking: auto-relisten or idle
+    await _afterSpeaking();
+  }
+
+  /// Post-speaking handler: auto-relisten in conversation mode, else idle.
+  Future<void> _afterSpeaking() async {
+    if (_state != VoiceState.speaking) return;
+
+    if (_isConversationActive) {
+      // Brief delay to prevent mic from picking up TTS audio tail
+      await Future.delayed(_relistenDelay);
+      if (_isConversationActive && _state == VoiceState.speaking) {
+        AppLogger.info(
+          LogCategory.lifecycle,
+          '[VOICE] Auto-relisten (conversation mode)',
+        );
+        await _startListening();
+      }
+    } else {
       _setState(VoiceState.idle);
     }
   }
 
   Future<void> _stopSpeaking() async {
     await _voiceEngine.stop();
+    _isConversationActive = false;
     _setState(VoiceState.idle);
   }
 
@@ -273,6 +453,8 @@ class VoiceController extends ChangeNotifier {
     _response = '';
     _errorMessage = '';
     _busy = false;
+    _processingInProgress = false;
+    _isConversationActive = false;
     _ai.clearMemory();
     _setState(VoiceState.idle);
   }

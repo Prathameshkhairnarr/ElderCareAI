@@ -25,7 +25,7 @@ class TtsService {
 
   /// Debounce guard — minimum gap between speak() calls.
   DateTime _lastSpeakTime = DateTime(2000);
-  static const _debounceMs = 300;
+  static const _debounceMs = 150;
 
   /// Current active locale.
   String _currentLocale = 'hi-IN';
@@ -36,21 +36,21 @@ class TtsService {
   //  ELDER-FRIENDLY PARAMETER BOUNDS
   // ══════════════════════════════════════════════════════
 
-  /// Speech rate bounds: slow and clear for elders.
-  static const double _minRate = 0.42;
-  static const double _maxRate = 0.48;
-  static const double _defaultRate = 0.45;
+  /// Speech rate bounds: clear but not too slow for elders.
+  static const double _minRate = 0.50;
+  static const double _maxRate = 0.60;
+  static const double _defaultRate = 0.55;
 
   /// Pitch bounds: warm and natural.
   static const double _minPitch = 1.0;
   static const double _maxPitch = 1.08;
-  static const double _defaultPitch = 1.05;
+  static const double _defaultPitch = 1.04;
 
   /// Volume: always maximum clarity.
   static const double _volume = 1.0;
 
-  /// Delay between sentence chunks (ms).
-  static const int _interSentenceDelayMs = 250;
+  /// Delay between sentence chunks (ms) — short for speed.
+  static const int _interSentenceDelayMs = 120;
 
   /// Clamp rate to elder-friendly bounds.
   double _clampRate(double rate) => rate.clamp(_minRate, _maxRate);

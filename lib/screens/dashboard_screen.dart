@@ -86,9 +86,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: _selectedNavIndex == 0,
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) {
+        if (!didPop && _selectedNavIndex != 0) {
           // Not on Home tab — switch to Home instead of exiting
           setState(() => _selectedNavIndex = 0);
         }

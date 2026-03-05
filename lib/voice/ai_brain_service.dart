@@ -8,6 +8,7 @@ import '../services/health_profile_service.dart';
 import '../services/risk_score_provider.dart';
 import '../services/system_status_manager.dart';
 import '../services/medicine_reminder_service.dart';
+import '../services/user_memory_service.dart';
 import 'action_handler.dart';
 import 'conversation_memory.dart';
 import 'emotion_tagger.dart';
@@ -46,8 +47,8 @@ class AiBrainService {
   final _healthService = HealthProfileService();
   final _riskProvider = RiskScoreProvider();
 
-  /// API call timeout.
-  static const _apiTimeout = Duration(seconds: 8);
+  /// API call timeout — reduced for faster fallback.
+  static const _apiTimeout = Duration(seconds: 6);
 
   /// Concurrency guard — prevent multiple simultaneous AI calls.
   bool _aiCallInProgress = false;
@@ -70,6 +71,10 @@ class AiBrainService {
       '4. Toggle module: {"action":"toggle_module","module":"sms_listener","value":true} '
       '   Modules: sms_listener, call_protection, health_monitor, sos '
       '5. Save name: {"action":"save_user_name","value":"Rahul"} '
+      '6. Save age: {"action":"save_user_age","value":"65"} '
+      '7. Save city: {"action":"save_user_city","value":"Mumbai"} '
+      '8. Navigate: {"action":"navigate","value":"health_profile"} '
+      '   Screens: health_profile, medication, sos, dashboard '
       '\n'
       'MEDICAL SAFETY: '
       'Never diagnose definitively. Never prescribe medicines. '
@@ -80,7 +85,7 @@ class AiBrainService {
       'Never mix JSON and text. '
       'Never say you are an AI. '
       'Use respectful "aap" form in Hindi. '
-      'Keep answers 3-4 sentences. '
+      'Keep answers 2-3 sentences MAX. '
       'Sound natural, warm, human. '
       'Respond in the same language the user spoke in. '
       'If user name is known, address them respectfully with "ji".';
@@ -137,7 +142,7 @@ class AiBrainService {
         ).timeout(_apiTimeout);
 
         if (aiText != null && aiText.isNotEmpty) {
-          final safe = _limitSentences(aiText, 5);
+          final safe = _limitSentences(aiText, 3);
           final emotion = EmotionTagger.tag(safe);
           _memory.addTurn(userInput, safe);
 
@@ -165,7 +170,7 @@ class AiBrainService {
         ).timeout(_apiTimeout);
 
         if (aiText != null && aiText.isNotEmpty) {
-          final safe = _limitSentences(aiText, 5);
+          final safe = _limitSentences(aiText, 3);
           final emotion = EmotionTagger.tag(safe);
           _memory.addTurn(userInput, safe);
 
@@ -322,7 +327,7 @@ class AiBrainService {
         {'role': 'user', 'content': userMessage.toString()},
       ],
       'temperature': 0.6,
-      'max_tokens': 250,
+      'max_tokens': 120,
     });
 
     final response = await http.post(
@@ -386,7 +391,7 @@ class AiBrainService {
         'temperature': 0.6,
         'topP': 0.9,
         'topK': 40,
-        'maxOutputTokens': 250,
+        'maxOutputTokens': 120,
       },
       'safetySettings': [
         {
@@ -503,9 +508,14 @@ class AiBrainService {
       '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
     );
 
-    // User name
-    final userName = ActionHandler.instance.userName;
+    // User name (from ActionHandler or UserMemory)
+    final userName =
+        ActionHandler.instance.userName ?? UserMemoryService.instance.userName;
     if (userName != null) parts.add('User name: $userName');
+
+    // User memory context
+    final memoryContext = UserMemoryService.instance.buildContextString();
+    if (memoryContext.isNotEmpty) parts.add('UserInfo: $memoryContext');
 
     // Health
     final profile = _healthService.profile;

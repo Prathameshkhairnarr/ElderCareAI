@@ -43,7 +43,7 @@ class VoiceEngine {
 
   /// Debounce guard — minimum gap between speak() calls.
   DateTime _lastSpeakTime = DateTime(2000);
-  static const _debounceMs = 300;
+  static const _debounceMs = 150;
 
   /// Temporary file path for neural TTS audio playback.
   String? _tempDir;

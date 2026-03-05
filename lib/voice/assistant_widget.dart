@@ -38,7 +38,7 @@ class _AssistantWidgetState extends State<AssistantWidget>
     setState(() {});
 
     // Manage pulse animation based on state
-    if (_controller.isListening) {
+    if (_controller.isListening || _controller.isConversationActive) {
       _pulseController.repeat(reverse: true);
     } else {
       _pulseController.stop();
@@ -52,6 +52,14 @@ class _AssistantWidgetState extends State<AssistantWidget>
     // Show response sheet when we have a response
     if (_controller.response.isNotEmpty && mounted) {
       _showResponseSheet();
+    }
+  }
+
+  void _onMicLongPress() async {
+    if (_controller.isConversationActive) {
+      _controller.stopConversation();
+    } else {
+      await _controller.startConversation();
     }
   }
 
@@ -74,7 +82,7 @@ class _AssistantWidgetState extends State<AssistantWidget>
       mainAxisSize: MainAxisSize.min,
       children: [
         // Status label above mic
-        if (!_controller.isIdle) ...[
+        if (!_controller.isIdle || _controller.isConversationActive) ...[
           _buildStatusChip(),
           const SizedBox(height: 8),
         ],
@@ -89,29 +97,38 @@ class _AssistantWidgetState extends State<AssistantWidget>
     Color color;
     IconData icon;
 
-    switch (_controller.state) {
-      case VoiceState.listening:
-        label = 'Listening...';
-        color = const Color(0xFFEF5350);
-        icon = Icons.mic_rounded;
-        break;
-      case VoiceState.processing:
-        label = 'Thinking...';
-        color = const Color(0xFF7C4DFF);
-        icon = Icons.psychology_rounded;
-        break;
-      case VoiceState.speaking:
-        label = 'Speaking...';
-        color = const Color(0xFF26A69A);
-        icon = Icons.volume_up_rounded;
-        break;
-      case VoiceState.error:
-        label = 'Error';
-        color = Colors.redAccent;
-        icon = Icons.error_outline_rounded;
-        break;
-      default:
-        return const SizedBox.shrink();
+    // Conversation mode indicator takes priority for idle state
+    if (_controller.isConversationActive && _controller.isIdle) {
+      label = 'Conversation Active';
+      color = const Color(0xFF66BB6A);
+      icon = Icons.chat_rounded;
+    } else {
+      switch (_controller.state) {
+        case VoiceState.listening:
+          label = _controller.isConversationActive
+              ? 'Listening...'
+              : 'Listening...';
+          color = const Color(0xFFEF5350);
+          icon = Icons.mic_rounded;
+          break;
+        case VoiceState.processing:
+          label = 'Thinking...';
+          color = const Color(0xFF7C4DFF);
+          icon = Icons.psychology_rounded;
+          break;
+        case VoiceState.speaking:
+          label = 'Speaking...';
+          color = const Color(0xFF26A69A);
+          icon = Icons.volume_up_rounded;
+          break;
+        case VoiceState.error:
+          label = 'Error';
+          color = Colors.redAccent;
+          icon = Icons.error_outline_rounded;
+          break;
+        default:
+          return const SizedBox.shrink();
+      }
     }
 
     return Container(
@@ -161,14 +178,19 @@ class _AssistantWidgetState extends State<AssistantWidget>
         icon = Icons.refresh_rounded;
         break;
       default:
-        bgColor = const Color(0xFF4FC3F7);
-        icon = Icons.mic_rounded;
+        bgColor = _controller.isConversationActive
+            ? const Color(0xFF66BB6A)
+            : const Color(0xFF4FC3F7);
+        icon = _controller.isConversationActive
+            ? Icons.chat_rounded
+            : Icons.mic_rounded;
     }
 
     return AnimatedBuilder(
       animation: _pulseController,
       builder: (context, child) {
-        final scale = _controller.isListening
+        final scale =
+            _controller.isListening || _controller.isConversationActive
             ? 1.0 + (_pulseController.value * 0.12)
             : 1.0;
 
@@ -180,26 +202,37 @@ class _AssistantWidgetState extends State<AssistantWidget>
               boxShadow: [
                 BoxShadow(
                   color: bgColor.withValues(alpha: 0.35),
-                  blurRadius: _controller.isListening ? 20 : 10,
-                  spreadRadius: _controller.isListening ? 4 : 0,
+                  blurRadius:
+                      _controller.isListening ||
+                          _controller.isConversationActive
+                      ? 20
+                      : 10,
+                  spreadRadius:
+                      _controller.isListening ||
+                          _controller.isConversationActive
+                      ? 4
+                      : 0,
                 ),
               ],
             ),
-            child: FloatingActionButton.large(
-              heroTag: 'voice_assistant_fab',
-              backgroundColor: bgColor,
-              elevation: 4,
-              onPressed: _controller.isProcessing ? null : _onMicTap,
-              child: _controller.isProcessing
-                  ? const SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 3,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Icon(icon, size: 32, color: Colors.white),
+            child: GestureDetector(
+              onLongPress: _controller.isProcessing ? null : _onMicLongPress,
+              child: FloatingActionButton.large(
+                heroTag: 'voice_assistant_fab',
+                backgroundColor: bgColor,
+                elevation: 4,
+                onPressed: _controller.isProcessing ? null : _onMicTap,
+                child: _controller.isProcessing
+                    ? const SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Icon(icon, size: 32, color: Colors.white),
+              ),
             ),
           ),
         );
