@@ -193,6 +193,7 @@ Future<void> _syncWithBackend(
 /// Top-level handler for SMS received when app is in background isolate
 @pragma('vm:entry-point')
 Future<void> backgroundMessageHandler(SmsMessage message) async {
+  WidgetsFlutterBinding.ensureInitialized();
   try {
     final body = message.body ?? '';
     final sender = message.address ?? 'Unknown';
@@ -228,6 +229,7 @@ Future<void> backgroundMessageHandler(SmsMessage message) async {
 /// Foreground service entry point
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
+  WidgetsFlutterBinding.ensureInitialized();
   try {
     AppLogger.info(LogCategory.lifecycle, 'Background service starting');
     DartPluginRegistrant.ensureInitialized();

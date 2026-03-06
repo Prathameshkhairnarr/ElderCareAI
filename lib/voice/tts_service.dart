@@ -37,14 +37,14 @@ class TtsService {
   // ══════════════════════════════════════════════════════
 
   /// Speech rate bounds: clear but not too slow for elders.
-  static const double _minRate = 0.50;
-  static const double _maxRate = 0.60;
-  static const double _defaultRate = 0.55;
+  static const double _minRate = 0.42;
+  static const double _maxRate = 0.55;
+  static const double _defaultRate = 0.48;
 
   /// Pitch bounds: warm and natural.
   static const double _minPitch = 1.0;
-  static const double _maxPitch = 1.08;
-  static const double _defaultPitch = 1.04;
+  static const double _maxPitch = 1.10;
+  static const double _defaultPitch = 1.06;
 
   /// Volume: always maximum clarity.
   static const double _volume = 1.0;

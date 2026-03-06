@@ -92,6 +92,37 @@ class VoiceController extends ChangeNotifier {
     }
   }
 
+  // ══════════════════════════════════════════════════════
+  //  GREETING — spoken when AI Doctor screen opens
+  // ══════════════════════════════════════════════════════
+
+  bool _greetingSpoken = false;
+
+  /// Speak a warm doctor greeting when the screen opens.
+  /// Only speaks once per controller lifecycle.
+  Future<void> speakGreeting() async {
+    if (_greetingSpoken) return;
+    _greetingSpoken = true;
+
+    final ready = await _ensureInit();
+    if (!ready) return;
+
+    const greeting =
+        'Namaste, main aapki AI Doctor hoon. Aap apni samasya bata sakte hain.';
+    _response = greeting;
+    _setState(VoiceState.speaking);
+
+    try {
+      await _voiceEngine.speak(greeting, 'hi-IN');
+    } catch (e) {
+      AppLogger.error(LogCategory.lifecycle, '[VOICE] Greeting error: $e');
+    }
+
+    if (_state == VoiceState.speaking) {
+      _setState(VoiceState.idle);
+    }
+  }
+
   // ══════════════════════════════════════════════
   //  PRIMARY ACTION — Tap to listen/stop
   // ══════════════════════════════════════════════

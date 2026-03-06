@@ -49,12 +49,11 @@ class HealthProfileService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
 
       // Load profile index
-      final indexJson = prefs.getString(_indexKey);
-      if (indexJson != null) {
+      final indexJsonStr = prefs.getString(_indexKey);
+      if (indexJsonStr != null) {
+        final decodedIndex = await compute(jsonDecode, indexJsonStr);
         _profileIndex = List<Map<String, dynamic>>.from(
-          (jsonDecode(indexJson) as List).map(
-            (e) => Map<String, dynamic>.from(e),
-          ),
+          (decodedIndex as List).map((e) => Map<String, dynamic>.from(e)),
         );
       }
 
@@ -113,7 +112,7 @@ class HealthProfileService extends ChangeNotifier {
     final key = '$_profilePrefix$id';
     final jsonStr = prefs.getString(key);
     if (jsonStr != null && jsonStr.isNotEmpty) {
-      _profile = HealthProfile.fromJsonString(jsonStr);
+      _profile = await compute(_parseProfileData, jsonStr);
       // Ensure profileId matches
       if (_profile.profileId != id) {
         _profile = _profile.copyWith(profileId: id);
@@ -314,3 +313,6 @@ class HealthProfileService extends ChangeNotifier {
     await prefs.setString(_indexKey, jsonEncode(_profileIndex));
   }
 }
+
+HealthProfile _parseProfileData(String json) =>
+    HealthProfile.fromJsonString(json);

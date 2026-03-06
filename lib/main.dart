@@ -10,6 +10,7 @@ import 'services/sms_listener_service.dart';
 import 'services/shake_detector_service.dart';
 import 'services/risk_score_provider.dart';
 import 'services/app_logger.dart';
+import 'services/location_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'app_theme.dart';
 import 'app_routes.dart';
@@ -134,6 +135,12 @@ Future<void> _initNonCriticalServices() async {
     await RiskScoreProvider().init().timeout(const Duration(seconds: 5));
   } catch (e) {
     AppLogger.warn(LogCategory.risk, 'RiskScoreProvider Init Failed: $e');
+  }
+
+  try {
+    await LocationService.initialize().timeout(const Duration(seconds: 5));
+  } catch (e) {
+    AppLogger.warn(LogCategory.lifecycle, 'LocationService Init Failed: $e');
   }
 }
 

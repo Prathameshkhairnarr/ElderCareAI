@@ -227,6 +227,31 @@ class AuthService {
     }
   }
 
+  // ── Refresh Token ──────────────────────────────────────
+  Future<bool> refreshToken() async {
+    if (_token == null) return false;
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/auth/refresh'),
+            headers: {'Authorization': 'Bearer $_token'},
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        _token = data['access_token'] as String;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_tokenKey, _token!);
+        return true;
+      }
+    } catch (e) {
+      AppLogger.warn(LogCategory.auth, 'Token refresh failed: $e');
+    }
+    // If refresh fails, don't force logout immediately, just return false
+    return false;
+  }
+
   // ── Logout ───────────────────────────────────────────
   Future<void> logout() async {
     _token = null;

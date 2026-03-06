@@ -1,12 +1,15 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import '../models/risk_model.dart';
 import '../models/sms_model.dart';
 import '../models/guardian_model.dart';
 import '../models/alert_model.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import 'auth_service.dart';
 import 'resilient_http.dart';
 import 'app_logger.dart';
+import 'network_manager.dart';
 
 class ApiService {
   // ── Singleton ────────────────────────────────────────
@@ -45,13 +48,33 @@ class ApiService {
 
   // ── Risk Score ───────────────────────────────────────
   Future<RiskModel?> getRiskScore() async {
+    const cacheKey = 'cache_risk_score';
     try {
+      if (!await NetworkManager.isOnline()) {
+        AppLogger.info(
+          LogCategory.network,
+          'Offline: Loading /risk from cache',
+        );
+        final prefs = await SharedPreferences.getInstance();
+        final cached = prefs.getString(cacheKey);
+        if (cached != null) {
+          return RiskModel.fromJson(
+            await compute<String, dynamic>(jsonDecode, cached),
+          );
+        }
+        return null;
+      }
+
       final result = await _http.get(
         Uri.parse('$_baseUrl/risk'),
         headers: _headers,
       );
       if (result.isSuccess) {
-        return RiskModel.fromJson(jsonDecode(result.body));
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(cacheKey, result.body);
+        return RiskModel.fromJson(
+          await compute<String, dynamic>(jsonDecode, result.body),
+        );
       }
       return null;
     } catch (e) {
@@ -68,7 +91,9 @@ class ApiService {
         headers: _headers,
       );
       if (result.isSuccess) {
-        return RiskModel.fromJson(jsonDecode(result.body));
+        return RiskModel.fromJson(
+          await compute<String, dynamic>(jsonDecode, result.body),
+        );
       }
       return null;
     } catch (e) {
@@ -99,7 +124,7 @@ class ApiService {
         body: jsonEncode({'message': message}),
       );
       if (result.isSuccess) {
-        final data = jsonDecode(result.body);
+        final data = await compute<String, dynamic>(jsonDecode, result.body);
         final sms = SmsModel.fromAnalysis(data, message);
         // Deduplicate
         _smsHistory.removeWhere(
@@ -127,7 +152,10 @@ class ApiService {
         headers: _headers,
       );
       if (result.isSuccess) {
-        final List<dynamic> data = jsonDecode(result.body);
+        final List<dynamic> data = await compute<String, dynamic>(
+          jsonDecode,
+          result.body,
+        );
         return data
             .map((item) => SmsModel.fromHistory(item as Map<String, dynamic>))
             .toList();
@@ -189,13 +217,29 @@ class ApiService {
 
   // ── Contacts Sync ────────────────────────────────────
   Future<List<dynamic>?> getContacts() async {
+    const cacheKey = 'cache_contacts';
     try {
+      if (!await NetworkManager.isOnline()) {
+        AppLogger.info(
+          LogCategory.network,
+          'Offline: Loading /contacts from cache',
+        );
+        final prefs = await SharedPreferences.getInstance();
+        final cached = prefs.getString(cacheKey);
+        if (cached != null) {
+          return await compute<String, dynamic>(jsonDecode, cached);
+        }
+        return null;
+      }
+
       final result = await _http.get(
         Uri.parse('$_baseUrl/contacts/'),
         headers: _headers,
       );
       if (result.isSuccess) {
-        return jsonDecode(result.body);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(cacheKey, result.body);
+        return await compute<String, dynamic>(jsonDecode, result.body);
       }
       return null;
     } catch (e) {
@@ -212,7 +256,7 @@ class ApiService {
         body: jsonEncode(contact),
       );
       if (result.isSuccess) {
-        return jsonDecode(result.body);
+        return await compute<String, dynamic>(jsonDecode, result.body);
       }
       AppLogger.warn(
         LogCategory.network,
@@ -240,13 +284,29 @@ class ApiService {
 
   // ── Health Monitor ───────────────────────────────────
   Future<Map<String, dynamic>?> getHealthSummary() async {
+    const cacheKey = 'cache_health_summary';
     try {
+      if (!await NetworkManager.isOnline()) {
+        AppLogger.info(
+          LogCategory.network,
+          'Offline: Loading /health/summary from cache',
+        );
+        final prefs = await SharedPreferences.getInstance();
+        final cached = prefs.getString(cacheKey);
+        if (cached != null) {
+          return await compute<String, dynamic>(jsonDecode, cached);
+        }
+        return null;
+      }
+
       final result = await _http.get(
         Uri.parse('$_baseUrl/health/summary'),
         headers: _headers,
       );
       if (result.isSuccess) {
-        return jsonDecode(result.body);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(cacheKey, result.body);
+        return await compute<String, dynamic>(jsonDecode, result.body);
       }
       return null;
     } catch (e) {
@@ -271,13 +331,29 @@ class ApiService {
 
   // ── Health Profile ──────────────────────────────────
   Future<Map<String, dynamic>?> getHealthProfile() async {
+    const cacheKey = 'cache_health_profile';
     try {
+      if (!await NetworkManager.isOnline()) {
+        AppLogger.info(
+          LogCategory.network,
+          'Offline: Loading /health/profile from cache',
+        );
+        final prefs = await SharedPreferences.getInstance();
+        final cached = prefs.getString(cacheKey);
+        if (cached != null) {
+          return await compute<String, dynamic>(jsonDecode, cached);
+        }
+        return null;
+      }
+
       final result = await _http.get(
         Uri.parse('$_baseUrl/health/profile'),
         headers: _headers,
       );
       if (result.isSuccess) {
-        return jsonDecode(result.body);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(cacheKey, result.body);
+        return await compute<String, dynamic>(jsonDecode, result.body);
       }
       return null;
     } catch (e) {
@@ -296,7 +372,7 @@ class ApiService {
         body: jsonEncode(data),
       );
       if (result.isSuccess) {
-        return jsonDecode(result.body);
+        return await compute<String, dynamic>(jsonDecode, result.body);
       }
       AppLogger.warn(
         LogCategory.network,
@@ -321,7 +397,7 @@ class ApiService {
         headers: _headers,
       );
       if (result.isSuccess) {
-        return jsonDecode(result.body);
+        return await compute<String, dynamic>(jsonDecode, result.body);
       }
       return null;
     } catch (e) {
@@ -337,7 +413,10 @@ class ApiService {
         headers: _headers,
       );
       if (result.isSuccess) {
-        final List<dynamic> data = jsonDecode(result.body);
+        final List<dynamic> data = await compute<String, dynamic>(
+          jsonDecode,
+          result.body,
+        );
         return data.map((e) => AlertModel.fromJson(e)).toList();
       }
       return [];
@@ -381,7 +460,10 @@ class ApiService {
         headers: _headers,
       );
       if (result.isSuccess) {
-        final List<dynamic> data = jsonDecode(result.body);
+        final List<dynamic> data = await compute<String, dynamic>(
+          jsonDecode,
+          result.body,
+        );
         return data.map((e) => GuardianModel.fromJson(e)).toList();
       }
       return [];
@@ -408,7 +490,9 @@ class ApiService {
         }),
       );
       if (result.statusCode == 201 || result.isSuccess) {
-        return GuardianModel.fromJson(jsonDecode(result.body));
+        return GuardianModel.fromJson(
+          await compute<String, dynamic>(jsonDecode, result.body),
+        );
       }
       AppLogger.warn(
         LogCategory.network,
@@ -441,7 +525,7 @@ class ApiService {
         headers: _headers,
       );
       if (result.isSuccess) {
-        final data = jsonDecode(result.body);
+        final data = await compute<String, dynamic>(jsonDecode, result.body);
         final List<dynamic> elders = data['elders'];
         return elders.map((e) => ElderStatsModel.fromJson(e)).toList();
       }

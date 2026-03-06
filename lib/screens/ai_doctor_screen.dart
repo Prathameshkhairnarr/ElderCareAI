@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../voice/voice_controller.dart';
-import '../voice/wake_word_service.dart';
 import '../services/emergency_service.dart';
 import '../services/api_service.dart';
 import '../services/health_profile_service.dart';
@@ -24,22 +23,12 @@ class _AiDoctorScreenState extends State<AiDoctorScreen> {
   @override
   void initState() {
     super.initState();
-    _initWakeWord();
-  }
-
-  Future<void> _initWakeWord() async {
-    // Initialize wake word with 'Doctor' trigger
-    final wakeWord = WakeWordService.instance;
-    wakeWord.onWakeWordDetected = () {
-      // When user says "Hey Doctor", auto-tap mic
-      _voice.onMicTap();
-    };
-    await wakeWord.start();
+    // Speak greeting when AI Doctor screen opens
+    _voice.speakGreeting();
   }
 
   @override
   void dispose() {
-    WakeWordService.instance.stop();
     _voice.dispose();
     super.dispose();
   }
@@ -136,10 +125,6 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
 
   Future<void> _onMicTap() async {
     await _vc.onMicTap();
-    // Resume wake word after interaction
-    if (_vc.state == VoiceState.idle) {
-      WakeWordService.instance.resume();
-    }
     if (_vc.response.isNotEmpty && mounted) {
       _showResponseSheet();
     }
@@ -148,9 +133,7 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
   void _onMicLongPress() {
     if (_vc.isConversationActive) {
       _vc.stopConversation();
-      WakeWordService.instance.resume();
     } else {
-      WakeWordService.instance.stop();
       _vc.startConversation();
     }
   }

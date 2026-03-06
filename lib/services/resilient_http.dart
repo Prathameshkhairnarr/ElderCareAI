@@ -11,6 +11,7 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app_logger.dart';
+import 'auth_service.dart';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  HTTP RESULT TYPE
@@ -63,13 +64,9 @@ class ResilientHttp {
 
   // ── Configuration ──
   static const Duration defaultReadTimeout = Duration(seconds: 10);
-  static const Duration defaultWriteTimeout = Duration(seconds: 15);
+  static const Duration defaultWriteTimeout = Duration(seconds: 10);
   static const int maxRetries = 3;
-  static const Duration _baseDelay = Duration(seconds: 1);
-  static const Duration _maxDelay = Duration(seconds: 30);
   static const String _offlineQueueKey = 'resilient_http_offline_queue';
-
-  final _random = Random();
 
   // ── GET ──
   Future<HttpResult> get(
@@ -81,9 +78,9 @@ class ResilientHttp {
     return _withRetry(
       retries: retries,
       label: 'GET ${url.path}',
-      action: () => http
-          .get(url, headers: headers)
-          .timeout(timeout ?? defaultReadTimeout),
+      headers: headers,
+      action: (h) =>
+          http.get(url, headers: h).timeout(timeout ?? defaultReadTimeout),
     );
   }
 
@@ -98,8 +95,9 @@ class ResilientHttp {
     return _withRetry(
       retries: retries,
       label: 'POST ${url.path}',
-      action: () => http
-          .post(url, headers: headers, body: body)
+      headers: headers,
+      action: (h) => http
+          .post(url, headers: h, body: body)
           .timeout(timeout ?? defaultWriteTimeout),
     );
   }
@@ -114,9 +112,9 @@ class ResilientHttp {
     return _withRetry(
       retries: retries,
       label: 'DELETE ${url.path}',
-      action: () => http
-          .delete(url, headers: headers)
-          .timeout(timeout ?? defaultWriteTimeout),
+      headers: headers,
+      action: (h) =>
+          http.delete(url, headers: h).timeout(timeout ?? defaultWriteTimeout),
     );
   }
 
@@ -127,13 +125,47 @@ class ResilientHttp {
   Future<HttpResult> _withRetry({
     required int retries,
     required String label,
-    required Future<http.Response> Function() action,
+    required Future<http.Response> Function(Map<String, String>?) action,
+    Map<String, String>? headers,
   }) async {
     final effectiveRetries = retries > 0 ? retries : maxRetries;
+    bool authRetried = false;
+
+    // Make headers modifiable if non-null
+    Map<String, String>? currentHeaders = headers != null
+        ? Map.from(headers)
+        : null;
 
     for (int attempt = 0; attempt <= effectiveRetries; attempt++) {
       try {
-        final response = await action();
+        if (attempt == 0) {
+          AppLogger.info(LogCategory.network, '[NETWORK] Request $label');
+        }
+
+        final response = await action(currentHeaders);
+        AppLogger.info(
+          LogCategory.network,
+          '[NETWORK] Response ${response.statusCode}',
+        );
+
+        // 401 Interceptor
+        if (response.statusCode == 401 && !authRetried) {
+          authRetried = true;
+          AppLogger.warn(
+            LogCategory.network,
+            '$label got 401, attempting token refresh...',
+          );
+          final refreshed = await AuthService().refreshToken();
+          if (refreshed) {
+            final newToken = AuthService().token;
+            if (newToken != null) {
+              currentHeaders ??= {};
+              currentHeaders['Authorization'] = 'Bearer $newToken';
+            }
+            attempt--; // Retry this attempt with new token
+            continue;
+          }
+        }
 
         // Don't retry client errors (4xx) — they won't magically fix
         if (response.statusCode >= 400 && response.statusCode < 500) {
@@ -153,7 +185,7 @@ class ResilientHttp {
           final delay = _backoffDelay(attempt);
           AppLogger.warn(
             LogCategory.network,
-            '$label got ${response.statusCode}, retry ${attempt + 1}/$effectiveRetries in ${delay.inMilliseconds}ms',
+            '[NETWORK] Retry attempt ${attempt + 1} for $label in ${delay.inSeconds}s',
           );
           await Future.delayed(delay);
           continue;
@@ -186,18 +218,31 @@ class ResilientHttp {
     return HttpResult.failure('Max retries exceeded');
   }
 
-  /// Exponential backoff with jitter:
-  /// delay = min(base * 2^attempt, maxDelay) + random(0–1000ms)
+  /// Strict exponential backoff: 1s, 2s, 4s...
   Duration _backoffDelay(int attempt) {
-    final exponential = _baseDelay.inMilliseconds * pow(2, attempt);
-    final capped = min(exponential.toInt(), _maxDelay.inMilliseconds);
-    final jitter = _random.nextInt(1000);
-    return Duration(milliseconds: capped + jitter);
+    final seconds = pow(2, attempt).toInt();
+    return Duration(seconds: seconds);
   }
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   //  OFFLINE EVENT QUEUE
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  /// Queue a general API mutation (POST/DELETE) when offline.
+  /// Converts request info so it can be replayed when internet is restored.
+  static Future<void> queueOfflineRequest({
+    required String method,
+    required String url,
+    Map<String, dynamic>? body,
+  }) async {
+    await queueOfflineEvent({
+      'type': 'queued_request',
+      'method': method,
+      'url': url,
+      'body': body,
+      'queued_at': DateTime.now().toIso8601String(),
+    });
+  }
 
   /// Queue a critical event when offline (SOS, high-risk SMS)
   static Future<void> queueOfflineEvent(Map<String, dynamic> event) async {

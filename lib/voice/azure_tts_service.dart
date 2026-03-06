@@ -32,9 +32,9 @@ class AzureTtsException implements Exception {
 /// Azure Cognitive Services Neural Text-to-Speech client.
 ///
 /// Features:
-///   - SSML with `mstts:express-as style="chat"` for natural conversational tone
+///   - SSML with `mstts:express-as style="gentle"` for warm doctor-like tone
 ///   - `hi-IN-SwaraNeural` primary voice (female, warm, elder-friendly)
-///   - Prosody tuning: rate -5% (responsive, not sleepy)
+///   - Prosody tuning: rate -8%, pitch +2% (calm, caring doctor)
 ///   - 6-second timeout guard
 ///   - In-memory LRU cache (20 entries)
 ///   - Typed exceptions for precise fallback decisions
@@ -59,9 +59,10 @@ class AzureTtsService {
 
   /// Build SSML markup for Azure Neural TTS.
   ///
-  /// Optimized for real-time conversational feel:
-  ///   - `chat` style — natural rhythm, no dramatic pauses
-  ///   - Rate `-5%` — responsive, not sleepy
+  /// Optimized for warm, doctor-like conversational feel:
+  ///   - `gentle` style — calm, caring, natural rhythm
+  ///   - Rate `-8%` — slightly slower for elder clarity
+  ///   - Pitch `+2%` — warmer, softer female tone
   ///   - Dynamic `ssmlLang` + `voiceName` for multi-language
   ///
   /// The [text] must already be XML-escaped before calling this method.
@@ -74,8 +75,8 @@ class AzureTtsService {
 
     return '''<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="$ssmlLang">
   <voice name="$voice">
-    <mstts:express-as style="chat">
-      <prosody rate="-5%" pitch="0%">
+    <mstts:express-as style="gentle">
+      <prosody rate="-8%" pitch="+2%">
         $text
       </prosody>
     </mstts:express-as>
