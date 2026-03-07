@@ -1,22 +1,22 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/risk_score_provider.dart';
-import '../services/emergency_service.dart';
 import '../widgets/dashboard_card.dart';
 import '../widgets/risk_indicator.dart';
-import '../widgets/page_transition.dart';
-import 'login_screen.dart';
+
 import 'sms_analyzer_screen.dart';
 import 'sos_screen.dart';
 import 'call_protection_screen.dart';
 import 'alerts_history_screen.dart';
 import 'health_profile_view_screen.dart';
 import 'guardian_setup_screen.dart';
-import '../voice/assistant_widget.dart';
 import 'ai_doctor_screen.dart';
 
-import 'settings/settings_screen.dart';
+import 'profile/profile_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -32,6 +32,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _loading = true;
   int _selectedNavIndex = 0;
   bool _backendReachable = true;
+  String? _profileImagePath;
 
   @override
   void initState() {
@@ -67,16 +68,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
       await _riskProvider.refresh();
     } catch (_) {}
 
+    // 3. Load profile image
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String? userPhone = _auth.currentUser?.phone;
+      
+      // Fallback: Read from SharedPreferences directly if currentUser isn't ready
+      if (userPhone == null || userPhone.isEmpty) {
+        final userDataStr = prefs.getString('user_data');
+        if (userDataStr != null) {
+          final userData = jsonDecode(userDataStr) as Map<String, dynamic>;
+          userPhone = userData['phone'] as String?;
+        }
+      }
+
+      if (userPhone != null && userPhone.isNotEmpty) {
+        final path = prefs.getString('profile_image_$userPhone');
+        if (path != null && File(path).existsSync()) {
+          if (mounted) setState(() => _profileImagePath = path);
+        } else {
+          if (mounted) setState(() => _profileImagePath = null);
+        }
+      } else {
+         if (mounted) setState(() => _profileImagePath = null);
+      }
+    } catch (_) {}
+
     if (mounted) setState(() => _loading = false);
   }
 
-  void _logout() {
-    _auth.logout();
-    Navigator.of(context).pushAndRemoveUntil(
-      PageTransition(page: const LoginScreen()),
-      (route) => false,
-    );
-  }
+
 
   void _onNavTap(int index) {
     if (index == _selectedNavIndex) return;
@@ -103,7 +124,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const AiDoctorScreen(), // 1: AI Doctor
             const SosScreen(), // 2: SOS
             const HealthProfileViewScreen(), // 3: Health
-            const SettingsScreen(), // 4: Settings
           ],
         ),
         bottomNavigationBar: NavigationBar(
@@ -125,10 +145,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             NavigationDestination(
               icon: Icon(Icons.favorite_rounded),
               label: 'Health',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.settings_rounded),
-              label: 'Settings',
             ),
           ],
         ),
@@ -211,17 +227,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               ],
                             ),
                           ),
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Theme.of(
+                          GestureDetector(
+                            onTap: () async {
+                              await Navigator.push(
                                 context,
-                              ).colorScheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: IconButton(
-                              onPressed: _logout,
-                              icon: const Icon(Icons.logout_rounded, size: 20),
-                              tooltip: 'Logout',
+                                MaterialPageRoute(
+                                  builder: (_) => const ProfileScreen(),
+                                ),
+                              );
+                              _loadData(); // reload image after coming back
+                            },
+                            child: Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color(0xFF4FC3F7),
+                                    Color(0xFF0288D1),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(14),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFF4FC3F7)
+                                        .withValues(alpha: 0.3),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                                image: _profileImagePath != null
+                                    ? DecorationImage(
+                                        image: FileImage(
+                                          File(_profileImagePath!),
+                                        ),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : null,
+                              ),
+                              child: _profileImagePath == null
+                                  ? Center(
+                                      child: Text(
+                                        (user?.name ?? 'U')[0].toUpperCase(),
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    )
+                                  : null,
                             ),
                           ),
                         ],

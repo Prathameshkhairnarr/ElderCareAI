@@ -5,7 +5,7 @@ import 'dart:convert';
 class HealthProfile {
   final String profileId;
   final String? name;
-  final int? age;
+  final DateTime? dateOfBirth;
   final String? gender;
   final String? bloodGroup;
   final double? heightCm;
@@ -17,7 +17,7 @@ class HealthProfile {
   const HealthProfile({
     this.profileId = 'default',
     this.name,
-    this.age,
+    this.dateOfBirth,
     this.gender,
     this.bloodGroup,
     this.heightCm,
@@ -30,8 +30,20 @@ class HealthProfile {
   /// Empty default state
   static const empty = HealthProfile();
 
+  /// Compute age from dateOfBirth. Returns null if DOB not set.
+  int? get age {
+    if (dateOfBirth == null) return null;
+    final now = DateTime.now();
+    int years = now.year - dateOfBirth!.year;
+    if (now.month < dateOfBirth!.month ||
+        (now.month == dateOfBirth!.month && now.day < dateOfBirth!.day)) {
+      years--;
+    }
+    return years;
+  }
+
   bool get isEmpty =>
-      age == null &&
+      dateOfBirth == null &&
       gender == null &&
       bloodGroup == null &&
       heightCm == null &&
@@ -43,7 +55,7 @@ class HealthProfile {
   int get completeness {
     int filled = 0;
     const total = 7;
-    if (age != null) filled++;
+    if (dateOfBirth != null) filled++;
     if (gender != null && gender!.isNotEmpty) filled++;
     if (bloodGroup != null && bloodGroup!.isNotEmpty) filled++;
     if (heightCm != null) filled++;
@@ -72,10 +84,19 @@ class HealthProfile {
   // ── Serialization ────────────────────────────
 
   factory HealthProfile.fromJson(Map<String, dynamic> json) {
+    // Backward compat: if old 'age' field exists but no DOB, estimate DOB
+    DateTime? dob;
+    if (json['date_of_birth'] != null) {
+      dob = DateTime.tryParse(json['date_of_birth'] as String);
+    } else if (json['age'] != null) {
+      final age = json['age'] as int;
+      dob = DateTime(DateTime.now().year - age, 1, 1);
+    }
+
     return HealthProfile(
       profileId: json['profile_id'] as String? ?? 'default',
       name: json['name'] as String?,
-      age: json['age'] as int?,
+      dateOfBirth: dob,
       gender: json['gender'] as String?,
       bloodGroup: json['blood_group'] as String?,
       heightCm: (json['height_cm'] as num?)?.toDouble(),
@@ -92,7 +113,9 @@ class HealthProfile {
     return {
       'profile_id': profileId,
       if (name != null) 'name': name,
-      if (age != null) 'age': age,
+      if (dateOfBirth != null)
+        'date_of_birth': dateOfBirth!.toIso8601String(),
+      if (age != null) 'age': age, // Keep for backward compat with API
       if (gender != null) 'gender': gender,
       if (bloodGroup != null) 'blood_group': bloodGroup,
       if (heightCm != null) 'height_cm': heightCm,
@@ -121,7 +144,7 @@ class HealthProfile {
   HealthProfile copyWith({
     String? profileId,
     String? name,
-    int? age,
+    DateTime? dateOfBirth,
     String? gender,
     String? bloodGroup,
     double? heightCm,
@@ -133,7 +156,7 @@ class HealthProfile {
     return HealthProfile(
       profileId: profileId ?? this.profileId,
       name: name ?? this.name,
-      age: age ?? this.age,
+      dateOfBirth: dateOfBirth ?? this.dateOfBirth,
       gender: gender ?? this.gender,
       bloodGroup: bloodGroup ?? this.bloodGroup,
       heightCm: heightCm ?? this.heightCm,
@@ -146,5 +169,5 @@ class HealthProfile {
 
   @override
   String toString() =>
-      'HealthProfile(id=$profileId, name=$name, completeness=$completeness%)';
+      'HealthProfile(id=$profileId, name=$name, age=$age, completeness=$completeness%)';
 }

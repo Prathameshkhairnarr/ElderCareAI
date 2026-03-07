@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../services/health_profile_service.dart';
 import '../widgets/page_transition.dart';
 import 'dashboard_screen.dart';
 import 'guardian_dashboard_screen.dart';
@@ -19,12 +20,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
 
   String _selectedRole = 'elder';
+  String? _selectedGender;
+  DateTime? _selectedDob;
   bool _isLoading = false;
   bool _obscurePin = true;
   String? _error;
 
   // Simple role list
   final List<String> _roles = ['elder', 'guardian'];
+  final List<String> _genders = ['male', 'female', 'other'];
 
   @override
   void dispose() {
@@ -57,6 +61,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
 
       if (success) {
+        // Save DOB & gender to local health profile
+        if (_selectedDob != null || _selectedGender != null) {
+          try {
+            final hpService = HealthProfileService();
+            final current = await hpService.load();
+            await hpService.save(current.copyWith(
+              dateOfBirth: _selectedDob,
+              gender: _selectedGender,
+            ));
+          } catch (_) {}
+        }
         if (_selectedRole == 'guardian') {
           Navigator.of(context).pushAndRemoveUntil(
             PageTransition(page: const GuardianDashboardScreen()),
@@ -196,6 +211,101 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               if (v == null || v.length < 4)
                                 return 'Min 4 digits';
                               return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Date of Birth picker
+                          GestureDetector(
+                            onTap: () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: _selectedDob ?? DateTime(1960, 1, 1),
+                                firstDate: DateTime(1900),
+                                lastDate: DateTime.now(),
+                                helpText: 'Select Date of Birth',
+                                builder: (ctx, child) {
+                                  return Theme(
+                                    data: Theme.of(ctx).copyWith(
+                                      colorScheme: const ColorScheme.dark(
+                                        primary: Color(0xFF4FC3F7),
+                                        surface: Color(0xFF16213E),
+                                      ),
+                                    ),
+                                    child: child!,
+                                  );
+                                },
+                              );
+                              if (picked != null) {
+                                setState(() => _selectedDob = picked);
+                              }
+                            },
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 16,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.06),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.1),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.cake_rounded,
+                                    color: Color(0xFF4FC3F7),
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      _selectedDob != null
+                                          ? 'DOB: ${_selectedDob!.day.toString().padLeft(2, '0')}/${_selectedDob!.month.toString().padLeft(2, '0')}/${_selectedDob!.year}  (${DateTime.now().year - _selectedDob!.year} yrs)'
+                                          : 'Date of Birth',
+                                      style: TextStyle(
+                                        color: _selectedDob != null
+                                            ? Colors.white
+                                            : Colors.white.withValues(alpha: 0.5),
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.calendar_today_rounded,
+                                    color: Colors.white.withValues(alpha: 0.4),
+                                    size: 18,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Gender selector
+                          DropdownButtonFormField<String>(
+                            value: _selectedGender,
+                            dropdownColor: const Color(0xFF16213E),
+                            style: const TextStyle(color: Colors.white),
+                            decoration: _inputDecoration(
+                              label: 'Gender',
+                              icon: Icons.person_rounded,
+                            ),
+                            items: _genders.map((g) {
+                              return DropdownMenuItem(
+                                value: g,
+                                child: Text(
+                                  g[0].toUpperCase() + g.substring(1),
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val != null)
+                                setState(() => _selectedGender = val);
                             },
                           ),
                           const SizedBox(height: 16),

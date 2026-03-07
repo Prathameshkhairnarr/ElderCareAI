@@ -8,7 +8,11 @@ import '../services/app_logger.dart';
 /// Unified Health tab — merges Health Monitor vitals + My Health profile
 /// into a single scrollable screen with real-time ChangeNotifier sync.
 class HealthProfileViewScreen extends StatefulWidget {
-  const HealthProfileViewScreen({super.key});
+  /// When true, shows only the editable health profile form (for Profile screen).
+  /// When false (default), shows only vitals dashboard (for Health tab).
+  final bool showEditableOnly;
+
+  const HealthProfileViewScreen({super.key, this.showEditableOnly = false});
 
   @override
   State<HealthProfileViewScreen> createState() =>
@@ -24,12 +28,10 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
   bool _isSaving = false;
 
   // ── Form controllers ──
-  final _ageController = TextEditingController();
   final _heightController = TextEditingController();
   final _weightController = TextEditingController();
   final _conditionsController = TextEditingController();
   final _emergencyContactController = TextEditingController();
-  String? _selectedGender;
   String? _selectedBloodGroup;
 
   final _genders = ['male', 'female', 'other'];
@@ -105,7 +107,6 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
   @override
   void dispose() {
     _profileService.removeListener(_onProfileUpdate);
-    _ageController.dispose();
     _heightController.dispose();
     _weightController.dispose();
     _conditionsController.dispose();
@@ -179,19 +180,17 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
   }
 
   void _populateFromProfile(HealthProfile profile) {
-    _ageController.text = profile.age?.toString() ?? '';
     _heightController.text = profile.heightCm?.toString() ?? '';
     _weightController.text = profile.weightKg?.toString() ?? '';
     _conditionsController.text = profile.medicalConditions ?? '';
     _emergencyContactController.text = profile.emergencyPhone ?? '';
-    _selectedGender = profile.gender;
     _selectedBloodGroup = profile.bloodGroup;
   }
 
   HealthProfile _buildProfileFromForm() {
-    return HealthProfile(
-      age: int.tryParse(_ageController.text),
-      gender: _selectedGender,
+    // Keep existing immutable fields like name, dateOfBirth, gender
+    final current = _profileService.profile;
+    return current.copyWith(
       bloodGroup: _selectedBloodGroup,
       heightCm: double.tryParse(_heightController.text),
       weightKg: double.tryParse(_weightController.text),
@@ -309,103 +308,107 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Screen title
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Health',
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w800,
-                                  color: cs.onSurface,
+                        if (!widget.showEditableOnly) ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Health',
+                                  style: TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w800,
+                                    color: cs.onSurface,
+                                  ),
                                 ),
                               ),
-                            ),
-                            Container(
-                              decoration: BoxDecoration(
-                                color: cs.surfaceContainerHighest,
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: IconButton(
-                                onPressed: _isLoading ? null : _loadAllData,
-                                icon: const Icon(
-                                  Icons.refresh_rounded,
-                                  size: 20,
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: cs.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(14),
                                 ),
-                                tooltip: 'Refresh',
+                                child: IconButton(
+                                  onPressed: _isLoading ? null : _loadAllData,
+                                  icon: const Icon(
+                                    Icons.refresh_rounded,
+                                    size: 20,
+                                  ),
+                                  tooltip: 'Refresh',
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
 
-                        // ── Section A: Health Score Card ──
-                        _buildHealthScoreCard(cs),
-                        const SizedBox(height: 20),
+                          // ── Section A: Health Score Card ──
+                          _buildHealthScoreCard(cs),
+                          const SizedBox(height: 20),
 
-                        // ── Section B: Vitals Summary ──
-                        _sectionTitle('Vitals', cs),
-                        const SizedBox(height: 12),
-                        _buildVitalsGrid(cs),
-                        const SizedBox(height: 24),
+                          // ── Section B: Vitals Summary ──
+                          _sectionTitle('Vitals', cs),
+                          const SizedBox(height: 12),
+                          _buildVitalsGrid(cs),
+                          const SizedBox(height: 20),
+                        ],
 
-                        // ── Section C: My Health Profile ──
-                        _buildProfileStatusCard(cs),
-                        const SizedBox(height: 20),
+                        // ── Editable Health Profile sections (only from Profile) ──
+                        if (widget.showEditableOnly) ...[
+                          _buildProfileStatusCard(cs),
+                          const SizedBox(height: 20),
 
-                        _sectionTitle('Basic Information', cs),
-                        const SizedBox(height: 12),
-                        _buildBasicInfoSection(cs),
-                        const SizedBox(height: 20),
+                          _sectionTitle('Blood Group', cs),
+                          const SizedBox(height: 12),
+                          _buildBasicInfoSection(cs),
+                          const SizedBox(height: 20),
 
-                        _sectionTitle('Body Metrics', cs),
-                        const SizedBox(height: 12),
-                        _buildBodyMetricsSection(cs),
-                        const SizedBox(height: 20),
+                          _sectionTitle('Body Metrics', cs),
+                          const SizedBox(height: 12),
+                          _buildBodyMetricsSection(cs),
+                          const SizedBox(height: 20),
 
-                        _sectionTitle('Medical Conditions', cs),
-                        const SizedBox(height: 12),
-                        _buildMedicalConditionsSection(cs),
-                        const SizedBox(height: 20),
+                          _sectionTitle('Medical Conditions', cs),
+                          const SizedBox(height: 12),
+                          _buildMedicalConditionsSection(cs),
+                          const SizedBox(height: 20),
 
-                        _sectionTitle('Emergency Contact', cs),
-                        const SizedBox(height: 12),
-                        _buildEmergencyContactSection(cs),
-                        const SizedBox(height: 28),
+                          _sectionTitle('Emergency Contact', cs),
+                          const SizedBox(height: 12),
+                          _buildEmergencyContactSection(cs),
+                          const SizedBox(height: 28),
 
-                        // Save button
-                        SizedBox(
-                          width: double.infinity,
-                          height: 52,
-                          child: ElevatedButton.icon(
-                            onPressed: _isSaving ? null : _saveProfile,
-                            icon: _isSaving
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.5,
-                                    ),
-                                  )
-                                : const Icon(Icons.save_rounded),
-                            label: Text(
-                              _isSaving ? 'Saving...' : 'Save Health Profile',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
+                          // Save button
+                          SizedBox(
+                            width: double.infinity,
+                            height: 52,
+                            child: ElevatedButton.icon(
+                              onPressed: _isSaving ? null : _saveProfile,
+                              icon: _isSaving
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                      ),
+                                    )
+                                  : const Icon(Icons.save_rounded),
+                              label: Text(
+                                _isSaving ? 'Saving...' : 'Save Health Profile',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF26A69A),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF26A69A),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                elevation: 0,
                               ),
-                              elevation: 0,
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 20),
+                          const SizedBox(height: 20),
+                        ],
                       ],
                     ),
                   ),
@@ -425,10 +428,8 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
         healthScore -= 10;
       }
     }
-    if (_ageController.text.isNotEmpty) {
-      final age = int.tryParse(_ageController.text);
-      if (age != null && age > 65) healthScore -= 5;
-    }
+    final age = _profileService.profile.age;
+    if (age != null && age > 65) healthScore -= 5;
 
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
@@ -763,46 +764,6 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
       cs,
       child: Column(
         children: [
-          TextFormField(
-            controller: _ageController,
-            keyboardType: TextInputType.number,
-            style: TextStyle(color: cs.onSurface),
-            decoration: _inputDecoration(
-              label: 'Age',
-              icon: Icons.cake_rounded,
-              cs: cs,
-            ),
-            validator: (v) {
-              if (v != null && v.isNotEmpty) {
-                final age = int.tryParse(v);
-                if (age == null || age < 1 || age > 150) {
-                  return 'Invalid age (1-150)';
-                }
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 14),
-          DropdownButtonFormField<String>(
-            value: _selectedGender,
-            dropdownColor: cs.surfaceContainerHighest,
-            style: TextStyle(color: cs.onSurface),
-            decoration: _inputDecoration(
-              label: 'Gender',
-              icon: Icons.person_rounded,
-              cs: cs,
-            ),
-            items: _genders
-                .map(
-                  (g) => DropdownMenuItem(
-                    value: g,
-                    child: Text(g[0].toUpperCase() + g.substring(1)),
-                  ),
-                )
-                .toList(),
-            onChanged: (val) => setState(() => _selectedGender = val),
-          ),
-          const SizedBox(height: 14),
           DropdownButtonFormField<String>(
             value: _selectedBloodGroup,
             dropdownColor: cs.surfaceContainerHighest,

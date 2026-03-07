@@ -23,8 +23,6 @@ class _AiDoctorScreenState extends State<AiDoctorScreen> {
   @override
   void initState() {
     super.initState();
-    // Speak greeting when AI Doctor screen opens
-    _voice.speakGreeting();
   }
 
   @override

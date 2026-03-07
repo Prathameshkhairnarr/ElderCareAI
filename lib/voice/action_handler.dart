@@ -312,7 +312,11 @@ class ActionHandler {
         break;
       case 'age':
         final a = int.tryParse(value);
-        if (a != null) updated = current.copyWith(age: a);
+        if (a != null) {
+          // Estimate DOB from spoken age
+          final dob = DateTime(DateTime.now().year - a, 1, 1);
+          updated = current.copyWith(dateOfBirth: dob);
+        }
         break;
       case 'blood_pressure':
       case 'sugar_level':
