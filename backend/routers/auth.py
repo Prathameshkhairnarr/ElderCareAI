@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 
 from database.engine import get_db
 from database.models import User
-from schemas.schemas import RegisterRequest, TokenResponse, UserOut
-from services.auth_service import hash_password, verify_password, create_access_token
+from schemas.schemas import RegisterRequest, TokenResponse, UserOut, ChangePinRequest, ProfilePhotoRequest
+from services.auth_service import hash_password, verify_password, create_access_token, get_current_user
 from utils.phone_utils import normalize_phone
 
 logger = logging.getLogger("eldercare")
@@ -94,4 +94,46 @@ def login(
         "access_token": token,
         "token_type": "bearer",
         "user": UserOut.model_validate(user).model_dump(mode="json"),
+    }
+
+
+@router.post("/change-pin")
+def change_pin(
+    body: ChangePinRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Change the user's PIN (password). Verifies current PIN first."""
+    if not verify_password(body.current_pin, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Current PIN is incorrect")
+
+    current_user.password_hash = hash_password(body.new_pin)
+    db.commit()
+    logger.info(f"PIN changed for user {current_user.id}")
+
+    return {"status": "success", "message": "PIN changed successfully"}
+
+
+@router.post("/profile-photo")
+def upload_profile_photo(
+    body: ProfilePhotoRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upload/update profile photo (base64 encoded)."""
+    current_user.profile_photo = body.photo
+    db.commit()
+    logger.info(f"Profile photo updated for user {current_user.id}")
+
+    return {"status": "success", "message": "Profile photo uploaded"}
+
+
+@router.get("/profile-photo")
+def get_profile_photo(
+    current_user: User = Depends(get_current_user),
+):
+    """Get the stored profile photo (base64)."""
+    return {
+        "photo": current_user.profile_photo,
+        "has_photo": current_user.profile_photo is not None,
     }

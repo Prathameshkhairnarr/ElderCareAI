@@ -112,8 +112,13 @@ class _MyHealthScreenState extends State<MyHealthScreen> {
 
   /// Build HealthProfile from current form values.
   HealthProfile _buildProfileFromForm() {
+    // Estimate DOB from entered age (Jan 1 of birth year)
+    final enteredAge = int.tryParse(_ageController.text);
+    final estimatedDob = enteredAge != null
+        ? DateTime(DateTime.now().year - enteredAge, 1, 1)
+        : null;
     return HealthProfile(
-      age: int.tryParse(_ageController.text),
+      dateOfBirth: estimatedDob,
       gender: _selectedGender,
       bloodGroup: _selectedBloodGroup,
       heightCm: double.tryParse(_heightController.text),

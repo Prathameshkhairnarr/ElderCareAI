@@ -33,11 +33,21 @@ class UserOut(BaseModel):
     role: str
     is_active: bool = True
     is_phone_verified: bool = True
+    profile_photo: Optional[str] = None
     created_at: datetime
     last_login_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
+
+class ChangePinRequest(BaseModel):
+    current_pin: str = Field(..., min_length=4)
+    new_pin: str = Field(..., min_length=4)
+
+
+class ProfilePhotoRequest(BaseModel):
+    photo: str = Field(..., min_length=1)  # Base64 encoded image
 
 
 # ── SMS Analysis ──────────────────────────────────────

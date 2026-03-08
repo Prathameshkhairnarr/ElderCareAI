@@ -9,7 +9,6 @@ from schemas.contact_schemas import ContactCreate, ContactResponse, ContactUpdat
 from services.auth_service import get_current_user
 
 router = APIRouter(
-    prefix="/contacts",
     tags=["contacts"],
 )
 

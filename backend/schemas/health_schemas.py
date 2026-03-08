@@ -38,6 +38,8 @@ class HealthProfileCreate(BaseModel):
     weight_kg: Optional[float] = Field(None, ge=5, le=500)
     medical_conditions: Optional[str] = ""
     emergency_contact: Optional[str] = Field(None, max_length=20)
+    city: Optional[str] = Field(None, max_length=100)
+    home_address: Optional[str] = None
 
 
 class HealthProfileResponse(BaseModel):
@@ -50,6 +52,8 @@ class HealthProfileResponse(BaseModel):
     weight_kg: Optional[float] = None
     medical_conditions: Optional[str] = ""
     emergency_contact: Optional[str] = None
+    city: Optional[str] = None
+    home_address: Optional[str] = None
     updated_at: Optional[datetime] = None
 
     class Config:

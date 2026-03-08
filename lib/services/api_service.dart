@@ -535,4 +535,74 @@ class ApiService {
       return [];
     }
   }
+
+  // ── Profile Photo (Cloud Sync) ──────────────────────
+  Future<bool> uploadProfilePhoto(String base64Image) async {
+    try {
+      final result = await _http.post(
+        Uri.parse('$_baseUrl/auth/profile-photo'),
+        headers: _headers,
+        body: jsonEncode({'photo': base64Image}),
+        timeout: const Duration(seconds: 30),
+      );
+      if (result.isSuccess) {
+        AppLogger.info(LogCategory.network, 'Profile photo uploaded to cloud');
+        return true;
+      }
+      AppLogger.warn(
+        LogCategory.network,
+        'uploadProfilePhoto failed: ${result.statusCode}',
+      );
+      return false;
+    } catch (e) {
+      AppLogger.error(LogCategory.network, 'uploadProfilePhoto error: $e');
+      return false;
+    }
+  }
+
+  Future<String?> getProfilePhoto() async {
+    try {
+      final result = await _http.get(
+        Uri.parse('$_baseUrl/auth/profile-photo'),
+        headers: _headers,
+        timeout: const Duration(seconds: 10),
+      );
+      if (result.isSuccess) {
+        final data = jsonDecode(result.body);
+        if (data['has_photo'] == true && data['photo'] != null) {
+          return data['photo'] as String;
+        }
+      }
+      return null;
+    } catch (e) {
+      AppLogger.error(LogCategory.network, 'getProfilePhoto error: $e');
+      return null;
+    }
+  }
+
+  // ── Change PIN (Backend) ─────────────────────────────
+  /// Returns null on success, or error message string on failure.
+  Future<String?> changePin(String currentPin, String newPin) async {
+    try {
+      final result = await _http.post(
+        Uri.parse('$_baseUrl/auth/change-pin'),
+        headers: _headers,
+        body: jsonEncode({'current_pin': currentPin, 'new_pin': newPin}),
+      );
+      if (result.isSuccess) {
+        AppLogger.info(LogCategory.auth, 'PIN changed via backend');
+        return null; // success
+      }
+      // Extract error detail from backend
+      try {
+        final errData = jsonDecode(result.body);
+        return errData['detail'] as String? ?? 'Failed to change PIN';
+      } catch (_) {
+        return 'Failed to change PIN (${result.statusCode})';
+      }
+    } catch (e) {
+      AppLogger.error(LogCategory.auth, 'changePin error: $e');
+      return 'Network error. Please check your connection.';
+    }
+  }
 }

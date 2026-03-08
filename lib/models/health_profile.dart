@@ -13,6 +13,8 @@ class HealthProfile {
   final String? medicalConditions;
   final String? emergencyPhone;
   final DateTime? lastUpdated;
+  final String? city;
+  final String? homeAddress;
 
   const HealthProfile({
     this.profileId = 'default',
@@ -25,6 +27,8 @@ class HealthProfile {
     this.medicalConditions,
     this.emergencyPhone,
     this.lastUpdated,
+    this.city,
+    this.homeAddress,
   });
 
   /// Empty default state
@@ -49,12 +53,14 @@ class HealthProfile {
       heightCm == null &&
       weightKg == null &&
       (medicalConditions == null || medicalConditions!.isEmpty) &&
-      (emergencyPhone == null || emergencyPhone!.isEmpty);
+      (emergencyPhone == null || emergencyPhone!.isEmpty) &&
+      (city == null || city!.isEmpty) &&
+      (homeAddress == null || homeAddress!.isEmpty);
 
   /// Completeness score 0–100 (percentage of filled fields)
   int get completeness {
     int filled = 0;
-    const total = 7;
+    const total = 9;
     if (dateOfBirth != null) filled++;
     if (gender != null && gender!.isNotEmpty) filled++;
     if (bloodGroup != null && bloodGroup!.isNotEmpty) filled++;
@@ -62,6 +68,8 @@ class HealthProfile {
     if (weightKg != null) filled++;
     if (medicalConditions != null && medicalConditions!.isNotEmpty) filled++;
     if (emergencyPhone != null && emergencyPhone!.isNotEmpty) filled++;
+    if (city != null && city!.isNotEmpty) filled++;
+    if (homeAddress != null && homeAddress!.isNotEmpty) filled++;
     return ((filled / total) * 100).round();
   }
 
@@ -106,6 +114,8 @@ class HealthProfile {
       lastUpdated: json['last_updated'] != null
           ? DateTime.tryParse(json['last_updated'] as String)
           : null,
+      city: json['city'] as String?,
+      homeAddress: json['home_address'] as String?,
     );
   }
 
@@ -113,8 +123,7 @@ class HealthProfile {
     return {
       'profile_id': profileId,
       if (name != null) 'name': name,
-      if (dateOfBirth != null)
-        'date_of_birth': dateOfBirth!.toIso8601String(),
+      if (dateOfBirth != null) 'date_of_birth': dateOfBirth!.toIso8601String(),
       if (age != null) 'age': age, // Keep for backward compat with API
       if (gender != null) 'gender': gender,
       if (bloodGroup != null) 'blood_group': bloodGroup,
@@ -123,6 +132,8 @@ class HealthProfile {
       if (medicalConditions != null) 'medical_conditions': medicalConditions,
       if (emergencyPhone != null) 'emergency_contact': emergencyPhone,
       if (lastUpdated != null) 'last_updated': lastUpdated!.toIso8601String(),
+      if (city != null) 'city': city,
+      if (homeAddress != null) 'home_address': homeAddress,
     };
   }
 
@@ -152,6 +163,8 @@ class HealthProfile {
     String? medicalConditions,
     String? emergencyPhone,
     DateTime? lastUpdated,
+    String? city,
+    String? homeAddress,
   }) {
     return HealthProfile(
       profileId: profileId ?? this.profileId,
@@ -164,6 +177,8 @@ class HealthProfile {
       medicalConditions: medicalConditions ?? this.medicalConditions,
       emergencyPhone: emergencyPhone ?? this.emergencyPhone,
       lastUpdated: lastUpdated ?? this.lastUpdated,
+      city: city ?? this.city,
+      homeAddress: homeAddress ?? this.homeAddress,
     );
   }
 

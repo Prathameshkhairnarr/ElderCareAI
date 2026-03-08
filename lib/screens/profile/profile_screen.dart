@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/auth_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/health_profile_service.dart';
+import '../../services/api_service.dart';
 import '../../widgets/page_transition.dart';
 import '../login_screen.dart';
 import '../health_profile_view_screen.dart';
@@ -26,6 +27,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _auth = AuthService();
   final _settings = SettingsService();
   final _healthProfile = HealthProfileService();
+  final _api = ApiService();
   final _imagePicker = ImagePicker();
 
   String? _profileImagePath;
@@ -52,7 +54,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadProfileImage() async {
     final prefs = await SharedPreferences.getInstance();
     String? userPhone = _auth.currentUser?.phone;
-    
+
     // Fallback: Read from SharedPreferences directly if currentUser isn't ready
     if (userPhone == null || userPhone.isEmpty) {
       final userDataStr = prefs.getString('user_data');
@@ -62,18 +64,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     }
 
+    // 1. Try loading from local cache first (instant)
     if (userPhone != null && userPhone.isNotEmpty) {
       final path = prefs.getString('profile_image_$userPhone');
       if (path != null && File(path).existsSync() && mounted) {
         setState(() => _profileImagePath = path);
       }
     }
+
+    // 2. Try downloading from cloud in background
+    try {
+      final cloudPhoto = await _api.getProfilePhoto();
+      if (cloudPhoto != null && mounted) {
+        // Decode base64 and save to local file
+        final bytes = base64Decode(cloudPhoto);
+        final dir = await Directory.systemTemp.createTemp('profile_');
+        final file = File('${dir.path}/profile_photo.jpg');
+        await file.writeAsBytes(bytes);
+
+        // Save locally for future instant access
+        if (userPhone != null && userPhone.isNotEmpty) {
+          await prefs.setString('profile_image_$userPhone', file.path);
+        }
+
+        if (mounted) {
+          setState(() => _profileImagePath = file.path);
+        }
+      }
+    } catch (e) {
+      // Cloud load failed — local image already loaded, no problem
+    }
   }
 
   Future<void> _saveProfileImage(String path) async {
     final prefs = await SharedPreferences.getInstance();
     String? userPhone = _auth.currentUser?.phone;
-    
+
     // Fallback
     if (userPhone == null || userPhone.isEmpty) {
       final userDataStr = prefs.getString('user_data');
@@ -98,9 +124,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
             color: cs.surface,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(28),
-            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -202,6 +226,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (saveImmediately) {
         await _saveProfileImage(picked.path);
         setState(() => _profileImagePath = picked.path);
+
+        // Upload to cloud in background
+        try {
+          final bytes = await File(picked.path).readAsBytes();
+          final base64Image = base64Encode(bytes);
+          await _api.uploadProfilePhoto(base64Image);
+        } catch (e) {
+          // Cloud upload failed — local save already done
+        }
       }
       return picked.path;
     }
@@ -348,14 +381,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showEditProfileSheet({String? tempImagePath}) {
     final user = _auth.currentUser;
     final profile = _healthProfile.profile;
-    
+
     // Use temp image if provided, otherwise fallback to existing
     String? currentImage = tempImagePath ?? _profileImagePath;
     final nameCtrl = TextEditingController(text: user?.name ?? '');
     final phoneCtrl = TextEditingController(text: user?.phone ?? '');
-    DateTime? selectedDob = profile.dateOfBirth;
-    String? selectedGender = profile.gender;
-    final genders = ['male', 'female', 'other'];
+    final cityCtrl = TextEditingController(text: profile.city ?? '');
+    final addressCtrl = TextEditingController(text: profile.homeAddress ?? '');
 
     showModalBottomSheet(
       context: context,
@@ -404,9 +436,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       GestureDetector(
                         onTap: () async {
                           Navigator.pop(ctx);
-                          final path = await _pickProfileImage(saveImmediately: false);
+                          final path = await _pickProfileImage(
+                            saveImmediately: false,
+                          );
                           if (mounted) {
-                            _showEditProfileSheet(tempImagePath: path ?? currentImage);
+                            _showEditProfileSheet(
+                              tempImagePath: path ?? currentImage,
+                            );
                           }
                         },
                         child: Stack(
@@ -424,9 +460,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 borderRadius: BorderRadius.circular(24),
                                 image: currentImage != null
                                     ? DecorationImage(
-                                        image: FileImage(
-                                          File(currentImage),
-                                        ),
+                                        image: FileImage(File(currentImage)),
                                         fit: BoxFit.cover,
                                       )
                                     : null,
@@ -508,19 +542,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                       const SizedBox(height: 14),
 
-                      // Date of Birth picker
+                      // ── DOB (Read-Only / Locked) ──
                       GestureDetector(
-                        onTap: () async {
-                          final picked = await showDatePicker(
-                            context: ctx,
-                            initialDate: selectedDob ?? DateTime(1960, 1, 1),
-                            firstDate: DateTime(1900),
-                            lastDate: DateTime.now(),
-                            helpText: 'Select Date of Birth',
+                        onTap: () {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(
+                              content: const Row(
+                                children: [
+                                  Icon(
+                                    Icons.lock_rounded,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Date of Birth is set during registration and cannot be changed',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              behavior: SnackBarBehavior.floating,
+                              backgroundColor: const Color(0xFF78909C),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              duration: const Duration(seconds: 3),
+                            ),
                           );
-                          if (picked != null) {
-                            setSheetState(() => selectedDob = picked);
-                          }
                         },
                         child: Container(
                           width: double.infinity,
@@ -530,59 +579,79 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           decoration: BoxDecoration(
                             color: cs.surfaceContainerHighest.withValues(
-                              alpha: 0.3,
+                              alpha: 0.2,
                             ),
                             borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: cs.onSurface.withValues(alpha: 0.08),
+                            ),
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.cake_rounded),
+                              Icon(
+                                Icons.cake_rounded,
+                                color: cs.onSurface.withValues(alpha: 0.4),
+                              ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      'Date of Birth',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: cs.onSurface.withValues(
-                                          alpha: 0.6,
+                                    Row(
+                                      children: [
+                                        Text(
+                                          'Date of Birth',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: cs.onSurface.withValues(
+                                              alpha: 0.6,
+                                            ),
+                                          ),
                                         ),
-                                      ),
+                                        const SizedBox(width: 6),
+                                        Icon(
+                                          Icons.lock_rounded,
+                                          size: 12,
+                                          color: cs.onSurface.withValues(
+                                            alpha: 0.3,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      selectedDob != null
-                                          ? '${selectedDob!.day.toString().padLeft(2, '0')}/${selectedDob!.month.toString().padLeft(2, '0')}/${selectedDob!.year}'
-                                          : 'Tap to select',
+                                      profile.dateOfBirth != null
+                                          ? '${profile.dateOfBirth!.day.toString().padLeft(2, '0')}/${profile.dateOfBirth!.month.toString().padLeft(2, '0')}/${profile.dateOfBirth!.year}'
+                                          : 'Not set during registration',
                                       style: TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.w600,
-                                        color: selectedDob != null
-                                            ? cs.onSurface
+                                        color: profile.dateOfBirth != null
+                                            ? cs.onSurface.withValues(
+                                                alpha: 0.7,
+                                              )
                                             : cs.onSurface.withValues(
-                                                alpha: 0.4,
+                                                alpha: 0.3,
                                               ),
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                              if (selectedDob != null)
+                              if (profile.dateOfBirth != null)
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 10,
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF4FC3F7).withValues(
-                                      alpha: 0.15,
-                                    ),
+                                    color: const Color(
+                                      0xFF4FC3F7,
+                                    ).withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
-                                    '${DateTime.now().year - selectedDob!.year} yrs',
+                                    '${profile.age ?? 0} yrs',
                                     style: const TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
@@ -596,19 +665,147 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                       const SizedBox(height: 14),
 
-                      // Gender dropdown
-                      DropdownButtonFormField<String>(
-                        value: selectedGender,
-                        dropdownColor: cs.surfaceContainerHighest,
-                        style: TextStyle(color: cs.onSurface),
-                        decoration: InputDecoration(
-                          labelText: 'Gender',
-                          prefixIcon: Icon(
-                            selectedGender == 'female'
-                                ? Icons.female_rounded
-                                : selectedGender == 'male'
+                      // ── Gender (Read-Only / Locked) ──
+                      GestureDetector(
+                        onTap: () {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(
+                              content: const Row(
+                                children: [
+                                  Icon(
+                                    Icons.lock_rounded,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Gender is set during registration and cannot be changed',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              behavior: SnackBarBehavior.floating,
+                              backgroundColor: const Color(0xFF78909C),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              duration: const Duration(seconds: 3),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 16,
+                          ),
+                          decoration: BoxDecoration(
+                            color: cs.surfaceContainerHighest.withValues(
+                              alpha: 0.2,
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: cs.onSurface.withValues(alpha: 0.08),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                profile.gender == 'female'
+                                    ? Icons.female_rounded
+                                    : profile.gender == 'male'
                                     ? Icons.male_rounded
                                     : Icons.person_rounded,
+                                color: cs.onSurface.withValues(alpha: 0.4),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          'Gender',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: cs.onSurface.withValues(
+                                              alpha: 0.6,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Icon(
+                                          Icons.lock_rounded,
+                                          size: 12,
+                                          color: cs.onSurface.withValues(
+                                            alpha: 0.3,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      profile.gender != null
+                                          ? profile.gender![0].toUpperCase() +
+                                                profile.gender!.substring(1)
+                                          : 'Not set during registration',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        color: profile.gender != null
+                                            ? cs.onSurface.withValues(
+                                                alpha: 0.7,
+                                              )
+                                            : cs.onSurface.withValues(
+                                                alpha: 0.3,
+                                              ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // ── City ──
+                      TextField(
+                        controller: cityCtrl,
+                        style: TextStyle(color: cs.onSurface),
+                        decoration: InputDecoration(
+                          labelText: 'City',
+                          prefixIcon: const Icon(Icons.location_city_rounded),
+                          filled: true,
+                          fillColor: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // ── Home Address ──
+                      TextField(
+                        controller: addressCtrl,
+                        style: TextStyle(color: cs.onSurface),
+                        maxLines: 2,
+                        decoration: InputDecoration(
+                          labelText: 'Home Address',
+                          hintText: 'Full address for emergency location',
+                          hintStyle: TextStyle(
+                            color: cs.onSurface.withValues(alpha: 0.3),
+                            fontSize: 13,
+                          ),
+                          prefixIcon: const Padding(
+                            padding: EdgeInsets.only(bottom: 20),
+                            child: Icon(Icons.home_rounded),
                           ),
                           filled: true,
                           fillColor: cs.surfaceContainerHighest.withValues(
@@ -619,18 +816,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             borderSide: BorderSide.none,
                           ),
                         ),
-                        items: genders
-                            .map(
-                              (g) => DropdownMenuItem(
-                                value: g,
-                                child: Text(
-                                  g[0].toUpperCase() + g.substring(1),
-                                ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (val) =>
-                            setSheetState(() => selectedGender = val),
                       ),
                       const SizedBox(height: 24),
 
@@ -640,15 +825,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         child: ElevatedButton(
                           onPressed: () async {
                             // Save image if changed
-                            if (currentImage != null && currentImage != _profileImagePath) {
+                            if (currentImage != null &&
+                                currentImage != _profileImagePath) {
                               await _saveProfileImage(currentImage);
                               _profileImagePath = currentImage;
+
+                              // Upload to cloud in background
+                              try {
+                                final bytes = await File(
+                                  currentImage,
+                                ).readAsBytes();
+                                final base64Image = base64Encode(bytes);
+                                await _api.uploadProfilePhoto(base64Image);
+                              } catch (e) {
+                                // Ignore
+                              }
                             }
 
-                            // Save DOB and gender to health profile
+                            // Save city and address to health profile
                             final updated = profile.copyWith(
-                              dateOfBirth: selectedDob,
-                              gender: selectedGender,
+                              city: cityCtrl.text.trim().isNotEmpty
+                                  ? cityCtrl.text.trim()
+                                  : null,
+                              homeAddress: addressCtrl.text.trim().isNotEmpty
+                                  ? addressCtrl.text.trim()
+                                  : null,
                             );
                             await _healthProfile.save(updated);
 
@@ -703,6 +904,291 @@ class _ProfileScreenState extends State<ProfileScreen> {
           },
         );
       },
+    );
+  }
+
+  // ── Change PIN bottom sheet ──
+  void _showChangePinSheet() {
+    final currentPinCtrl = TextEditingController();
+    final newPinCtrl = TextEditingController();
+    final confirmPinCtrl = TextEditingController();
+    bool obscureCurrent = true;
+    bool obscureNew = true;
+    bool obscureConfirm = true;
+    String? pinError;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final cs = Theme.of(ctx).colorScheme;
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+                decoration: BoxDecoration(
+                  color: cs.surface,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(28),
+                  ),
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: cs.onSurface.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.lock_rounded,
+                            color: Color(0xFF7C4DFF),
+                            size: 24,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Change PIN',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Current PIN
+                      TextField(
+                        controller: currentPinCtrl,
+                        keyboardType: TextInputType.number,
+                        obscureText: obscureCurrent,
+                        style: TextStyle(color: cs.onSurface),
+                        decoration: InputDecoration(
+                          labelText: 'Current PIN',
+                          prefixIcon: const Icon(Icons.lock_outline_rounded),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureCurrent
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded,
+                            ),
+                            onPressed: () => setSheetState(
+                              () => obscureCurrent = !obscureCurrent,
+                            ),
+                          ),
+                          filled: true,
+                          fillColor: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // New PIN
+                      TextField(
+                        controller: newPinCtrl,
+                        keyboardType: TextInputType.number,
+                        obscureText: obscureNew,
+                        style: TextStyle(color: cs.onSurface),
+                        decoration: InputDecoration(
+                          labelText: 'New PIN (min 4 digits)',
+                          prefixIcon: const Icon(Icons.lock_rounded),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureNew
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded,
+                            ),
+                            onPressed: () =>
+                                setSheetState(() => obscureNew = !obscureNew),
+                          ),
+                          filled: true,
+                          fillColor: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Confirm PIN
+                      TextField(
+                        controller: confirmPinCtrl,
+                        keyboardType: TextInputType.number,
+                        obscureText: obscureConfirm,
+                        style: TextStyle(color: cs.onSurface),
+                        decoration: InputDecoration(
+                          labelText: 'Confirm New PIN',
+                          prefixIcon: const Icon(Icons.lock_rounded),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureConfirm
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded,
+                            ),
+                            onPressed: () => setSheetState(
+                              () => obscureConfirm = !obscureConfirm,
+                            ),
+                          ),
+                          filled: true,
+                          fillColor: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+
+                      if (pinError != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          pinError!,
+                          style: const TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            final currentPin = currentPinCtrl.text.trim();
+                            final newPin = newPinCtrl.text.trim();
+                            final confirmPin = confirmPinCtrl.text.trim();
+
+                            if (currentPin.isEmpty) {
+                              setSheetState(
+                                () => pinError = 'Enter your current PIN',
+                              );
+                              return;
+                            }
+                            if (newPin.length < 4) {
+                              setSheetState(
+                                () => pinError =
+                                    'New PIN must be at least 4 digits',
+                              );
+                              return;
+                            }
+                            if (newPin != confirmPin) {
+                              setSheetState(
+                                () => pinError = 'PINs do not match',
+                              );
+                              return;
+                            }
+
+                            // Change PIN via backend API
+                            final error = await _api.changePin(
+                              currentPin,
+                              newPin,
+                            );
+                            if (error != null) {
+                              setSheetState(() => pinError = error);
+                              return;
+                            }
+
+                            if (!ctx.mounted) return;
+                            Navigator.pop(ctx);
+
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.check_circle_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    SizedBox(width: 10),
+                                    Text('PIN changed successfully!'),
+                                  ],
+                                ),
+                                behavior: SnackBarBehavior.floating,
+                                backgroundColor: const Color(0xFF26A69A),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF7C4DFF),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Text(
+                            'Update PIN',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ── Coming Soon dialog ──
+  void _showComingSoonDialog(String feature) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.rocket_launch_rounded, color: Color(0xFF4FC3F7)),
+            const SizedBox(width: 10),
+            Text(feature),
+          ],
+        ),
+        content: const Text(
+          'This feature is coming soon in a future update! Stay tuned.',
+          style: TextStyle(fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -761,11 +1247,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const HealthProfileViewScreen(
-                    showEditableOnly: true,
-                  ),
+                  builder: (_) =>
+                      const HealthProfileViewScreen(showEditableOnly: true),
                 ),
               ),
+            ),
+            _buildActionTile(
+              icon: Icons.emergency_rounded,
+              title: 'Manage Emergency Contacts',
+              subtitle: 'Add or edit your emergency contacts',
+              color: const Color(0xFFFF7043),
+              cs: cs,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ContactsScreen()),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // ── ACCOUNT SECURITY ──
+            _buildSectionTitle('Account Security', cs),
+            const SizedBox(height: 10),
+            _buildActionTile(
+              icon: Icons.lock_rounded,
+              title: 'Change PIN',
+              subtitle: 'Update your login PIN',
+              color: const Color(0xFF7C4DFF),
+              cs: cs,
+              onTap: _showChangePinSheet,
+            ),
+            _buildActionTile(
+              icon: Icons.phone_android_rounded,
+              title: 'Change Phone Number',
+              subtitle: 'Update your registered number',
+              color: const Color(0xFF26A69A),
+              cs: cs,
+              onTap: () => _showComingSoonDialog('Change Phone Number'),
             ),
             const SizedBox(height: 24),
 
@@ -914,8 +1431,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   CircularProgressIndicator(
                     value: completeness / 100,
                     strokeWidth: 4,
-                    backgroundColor:
-                        const Color(0xFFFFB300).withValues(alpha: 0.2),
+                    backgroundColor: const Color(
+                      0xFFFFB300,
+                    ).withValues(alpha: 0.2),
                     valueColor: const AlwaysStoppedAnimation(Color(0xFFFFB300)),
                   ),
                   Text(
@@ -936,10 +1454,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   const Text(
                     'Complete your profile',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -1017,8 +1532,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       borderRadius: BorderRadius.circular(24),
                       boxShadow: [
                         BoxShadow(
-                          color:
-                              const Color(0xFF4FC3F7).withValues(alpha: 0.3),
+                          color: const Color(0xFF4FC3F7).withValues(alpha: 0.3),
                           blurRadius: 16,
                           offset: const Offset(0, 6),
                         ),
@@ -1068,10 +1582,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             // Name
             Text(
               user?.name ?? 'User',
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-              ),
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 4),
 
@@ -1083,14 +1594,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 color: cs.onSurface.withValues(alpha: 0.5),
               ),
             ),
+
+            // City (if set)
+            if (_healthProfile.profile.city != null &&
+                _healthProfile.profile.city!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.location_on_rounded,
+                    size: 14,
+                    color: cs.onSurface.withValues(alpha: 0.4),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _healthProfile.profile.city!,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: cs.onSurface.withValues(alpha: 0.45),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 10),
 
             // Role badge
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 5,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
               decoration: BoxDecoration(
                 color: const Color(0xFF4FC3F7).withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(20),
@@ -1310,13 +1842,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: SliderTheme(
                   data: SliderTheme.of(context).copyWith(
                     activeTrackColor: const Color(0xFF42A5F5),
-                    inactiveTrackColor: const Color(0xFF42A5F5).withValues(
-                      alpha: 0.2,
-                    ),
+                    inactiveTrackColor: const Color(
+                      0xFF42A5F5,
+                    ).withValues(alpha: 0.2),
                     thumbColor: const Color(0xFF42A5F5),
-                    overlayColor: const Color(0xFF42A5F5).withValues(
-                      alpha: 0.1,
-                    ),
+                    overlayColor: const Color(
+                      0xFF42A5F5,
+                    ).withValues(alpha: 0.1),
                     trackHeight: 4,
                   ),
                   child: Slider(
@@ -1343,10 +1875,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             child: Text(
               'Preview: This is how your text will look',
-              style: TextStyle(
-                fontSize: 14 * _settings.fontScale,
-                height: 1.4,
-              ),
+              style: TextStyle(fontSize: 14 * _settings.fontScale, height: 1.4),
               textAlign: TextAlign.center,
             ),
           ),

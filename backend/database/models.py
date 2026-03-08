@@ -25,6 +25,7 @@ class User(Base):
     is_phone_verified = Column(Boolean, default=True)  # True by default (no OTP provider)
     created_at = Column(DateTime, default=_utcnow)
     last_login_at = Column(DateTime, nullable=True)
+    profile_photo = Column(Text, nullable=True)  # Base64 encoded profile image
 
     sms_analyses = sqlalchemy_relationship("SmsAnalysis", back_populates="user")
     call_analyses = sqlalchemy_relationship("CallAnalysis", back_populates="user")
@@ -52,6 +53,8 @@ class HealthProfile(Base):
     medical_conditions = Column(Text, nullable=True, default="")
     emergency_contact = Column(String(20), nullable=True)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    city = Column(String(100), nullable=True)
+    home_address = Column(Text, nullable=True)
 
     user = sqlalchemy_relationship("User", back_populates="health_profile")
 
