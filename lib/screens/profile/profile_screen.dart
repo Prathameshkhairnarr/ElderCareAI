@@ -542,34 +542,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                       const SizedBox(height: 14),
 
-                      // ── DOB (Read-Only / Locked) ──
-                      GestureDetector(
-                        onTap: () {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            SnackBar(
-                              content: const Row(
-                                children: [
-                                  Icon(
-                                    Icons.lock_rounded,
-                                    color: Colors.white,
-                                    size: 18,
-                                  ),
-                                  SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'Date of Birth is set during registration and cannot be changed',
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              behavior: SnackBarBehavior.floating,
-                              backgroundColor: const Color(0xFF78909C),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              duration: const Duration(seconds: 3),
-                            ),
+                      // ── Editable DOB ──
+                      InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: ctx,
+                            initialDate:
+                                _healthProfile.profile.dateOfBirth ??
+                                DateTime(2000),
+                            firstDate: DateTime(1900),
+                            lastDate: DateTime.now(),
                           );
+                          if (picked != null) {
+                            setSheetState(() {
+                              _healthProfile.profile = _healthProfile.profile
+                                  .copyWith(dateOfBirth: picked);
+                            });
+                          }
                         },
                         child: Container(
                           width: double.infinity,
@@ -579,66 +568,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           decoration: BoxDecoration(
                             color: cs.surfaceContainerHighest.withValues(
-                              alpha: 0.2,
+                              alpha: 0.3,
                             ),
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: cs.onSurface.withValues(alpha: 0.08),
-                            ),
                           ),
                           child: Row(
                             children: [
                               Icon(
                                 Icons.cake_rounded,
-                                color: cs.onSurface.withValues(alpha: 0.4),
+                                color: cs.onSurface.withValues(alpha: 0.7),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Row(
-                                      children: [
-                                        Text(
-                                          'Date of Birth',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: cs.onSurface.withValues(
-                                              alpha: 0.6,
-                                            ),
-                                          ),
+                                    Text(
+                                      'Date of Birth',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: cs.onSurface.withValues(
+                                          alpha: 0.6,
                                         ),
-                                        const SizedBox(width: 6),
-                                        Icon(
-                                          Icons.lock_rounded,
-                                          size: 12,
-                                          color: cs.onSurface.withValues(
-                                            alpha: 0.3,
-                                          ),
-                                        ),
-                                      ],
+                                      ),
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      profile.dateOfBirth != null
-                                          ? '${profile.dateOfBirth!.day.toString().padLeft(2, '0')}/${profile.dateOfBirth!.month.toString().padLeft(2, '0')}/${profile.dateOfBirth!.year}'
-                                          : 'Not set during registration',
+                                      _healthProfile.profile.dateOfBirth != null
+                                          ? '${_healthProfile.profile.dateOfBirth!.day.toString().padLeft(2, '0')}/${_healthProfile.profile.dateOfBirth!.month.toString().padLeft(2, '0')}/${_healthProfile.profile.dateOfBirth!.year}'
+                                          : 'Tap to set',
                                       style: TextStyle(
                                         fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                        color: profile.dateOfBirth != null
-                                            ? cs.onSurface.withValues(
-                                                alpha: 0.7,
-                                              )
-                                            : cs.onSurface.withValues(
-                                                alpha: 0.3,
-                                              ),
+                                        color:
+                                            _healthProfile
+                                                    .profile
+                                                    .dateOfBirth !=
+                                                null
+                                            ? cs.onSurface
+                                            : cs.primary,
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                              if (profile.dateOfBirth != null)
+                              if (_healthProfile.profile.dateOfBirth != null)
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 10,
@@ -651,7 +624,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
-                                    '${profile.age ?? 0} yrs',
+                                    '${DateTime.now().year - _healthProfile.profile.dateOfBirth!.year} yrs',
                                     style: const TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
@@ -665,108 +638,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                       const SizedBox(height: 14),
 
-                      // ── Gender (Read-Only / Locked) ──
-                      GestureDetector(
-                        onTap: () {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            SnackBar(
-                              content: const Row(
-                                children: [
-                                  Icon(
-                                    Icons.lock_rounded,
-                                    color: Colors.white,
-                                    size: 18,
-                                  ),
-                                  SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'Gender is set during registration and cannot be changed',
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              behavior: SnackBarBehavior.floating,
-                              backgroundColor: const Color(0xFF78909C),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              duration: const Duration(seconds: 3),
-                            ),
+                      // ── Editable Gender ──
+                      DropdownButtonFormField<String>(
+                        value:
+                            ['male', 'female', 'other'].contains(
+                              _healthProfile.profile.gender?.toLowerCase(),
+                            )
+                            ? _healthProfile.profile.gender?.toLowerCase()
+                            : null,
+                        items: ['male', 'female', 'other'].map((String g) {
+                          return DropdownMenuItem<String>(
+                            value: g,
+                            child: Text(g[0].toUpperCase() + g.substring(1)),
                           );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setSheetState(() {
+                              _healthProfile.profile = _healthProfile.profile
+                                  .copyWith(gender: val);
+                            });
+                          }
                         },
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 16,
+                        style: TextStyle(color: cs.onSurface, fontSize: 15),
+                        decoration: InputDecoration(
+                          labelText: 'Gender',
+                          prefixIcon: Icon(
+                            _healthProfile.profile.gender == 'female'
+                                ? Icons.female_rounded
+                                : _healthProfile.profile.gender == 'male'
+                                ? Icons.male_rounded
+                                : Icons.person_outline_rounded,
                           ),
-                          decoration: BoxDecoration(
-                            color: cs.surfaceContainerHighest.withValues(
-                              alpha: 0.2,
-                            ),
+                          filled: true,
+                          fillColor: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: cs.onSurface.withValues(alpha: 0.08),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                profile.gender == 'female'
-                                    ? Icons.female_rounded
-                                    : profile.gender == 'male'
-                                    ? Icons.male_rounded
-                                    : Icons.person_rounded,
-                                color: cs.onSurface.withValues(alpha: 0.4),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Text(
-                                          'Gender',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: cs.onSurface.withValues(
-                                              alpha: 0.6,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Icon(
-                                          Icons.lock_rounded,
-                                          size: 12,
-                                          color: cs.onSurface.withValues(
-                                            alpha: 0.3,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      profile.gender != null
-                                          ? profile.gender![0].toUpperCase() +
-                                                profile.gender!.substring(1)
-                                          : 'Not set during registration',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                        color: profile.gender != null
-                                            ? cs.onSurface.withValues(
-                                                alpha: 0.7,
-                                              )
-                                            : cs.onSurface.withValues(
-                                                alpha: 0.3,
-                                              ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
+                            borderSide: BorderSide.none,
                           ),
                         ),
                       ),
@@ -842,8 +752,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               }
                             }
 
-                            // Save city and address to health profile
-                            final updated = profile.copyWith(
+                            // Save city, address, DOB & gender to health profile
+                            // By using _healthProfile.profile, we capture the live state
+                            // modified by DatePicker and Gender dropdown interactions.
+                            final updated = _healthProfile.profile.copyWith(
                               city: cityCtrl.text.trim().isNotEmpty
                                   ? cityCtrl.text.trim()
                                   : null,
@@ -851,7 +763,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ? addressCtrl.text.trim()
                                   : null,
                             );
+
                             await _healthProfile.save(updated);
+                            // POST to cloud so data doesn't reset on account switch
+                            await _api.saveHealthProfile(updated.toJson());
 
                             if (!ctx.mounted) return;
                             Navigator.pop(ctx);
@@ -868,7 +783,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       size: 20,
                                     ),
                                     SizedBox(width: 10),
-                                    Text('Profile updated!'),
+                                    Text('Profile successfully updated!'),
                                   ],
                                 ),
                                 behavior: SnackBarBehavior.floating,
@@ -1165,33 +1080,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Coming Soon dialog ──
-  void _showComingSoonDialog(String feature) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            const Icon(Icons.rocket_launch_rounded, color: Color(0xFF4FC3F7)),
-            const SizedBox(width: 10),
-            Text(feature),
-          ],
-        ),
-        content: const Text(
-          'This feature is coming soon in a future update! Stay tuned.',
-          style: TextStyle(fontSize: 14, height: 1.5),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
   // ══════════════════════════════════════════════════════
   //  BUILD
   // ══════════════════════════════════════════════════════
@@ -1276,14 +1164,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               cs: cs,
               onTap: _showChangePinSheet,
             ),
-            _buildActionTile(
-              icon: Icons.phone_android_rounded,
-              title: 'Change Phone Number',
-              subtitle: 'Update your registered number',
-              color: const Color(0xFF26A69A),
-              cs: cs,
-              onTap: () => _showComingSoonDialog('Change Phone Number'),
-            ),
+
             const SizedBox(height: 24),
 
             // ── APP PREFERENCES ──

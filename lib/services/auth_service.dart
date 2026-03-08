@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import 'app_logger.dart';
+import 'health_profile_service.dart';
 
 /// Represents the currently logged-in user.
 class UserProfile {
@@ -257,7 +258,29 @@ class AuthService {
     _token = null;
     _currentUser = null;
     final prefs = await SharedPreferences.getInstance();
+
+    // Clear Auth
     await prefs.remove(_tokenKey);
     await prefs.remove(_userKey);
+
+    // Clear API Service Caches
+    await prefs.remove('cache_health_profile');
+    await prefs.remove('cache_risk_score');
+    await prefs.remove('cache_contacts');
+    await prefs.remove('cache_health_summary');
+
+    // Clear HealthProfileService persistence & memory singleton
+    // This clears the single default profile/v1 cache, index, and all memory states.
+    final healthService = HealthProfileService();
+    await healthService.hardReset();
+
+    // We already do this via hardReset() above but keeping this loop just in case
+    // of orphaned SharedPreferences keys.
+    final keys = prefs.getKeys();
+    for (String key in keys) {
+      if (key.startsWith('health_profile_')) {
+        await prefs.remove(key);
+      }
+    }
   }
 }

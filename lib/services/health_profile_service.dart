@@ -28,6 +28,12 @@ class HealthProfileService extends ChangeNotifier {
   /// Current active profile (always available, never null).
   HealthProfile get profile => _profile;
 
+  /// Update the current profile directly in memory (used by UI).
+  set profile(HealthProfile newProfile) {
+    _profile = newProfile;
+    notifyListeners();
+  }
+
   /// Active profile ID.
   String get activeProfileId => _activeProfileId;
 
@@ -288,6 +294,38 @@ class HealthProfileService extends ChangeNotifier {
         LogCategory.lifecycle,
         'Failed to clear health profile: $e',
       );
+    }
+  }
+
+  /// Wipe the underlying memory state (singleton) and all associated cache.
+  /// Call this when the user logs out so a new user gets a fresh profile.
+  Future<void> hardReset() async {
+    try {
+      AppLogger.info(
+        LogCategory.lifecycle,
+        '[HEALTH] Performing hard reset of memory & storage.',
+      );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_indexKey);
+      await prefs.remove(_activeKey);
+      await prefs.remove(_legacyKey);
+
+      final keys = prefs.getKeys();
+      for (String key in keys) {
+        if (key.startsWith(_profilePrefix)) {
+          await prefs.remove(key);
+        }
+      }
+
+      // Reset internal RAM memory state
+      _profileIndex = [];
+      _activeProfileId = 'default';
+      _profile = HealthProfile.empty;
+      _initialized = false;
+
+      notifyListeners();
+    } catch (e) {
+      AppLogger.error(LogCategory.lifecycle, '[HEALTH] Hard reset failed: $e');
     }
   }
 
