@@ -11,6 +11,8 @@ Changes:
 import asyncio
 import uuid
 import time
+import os
+import csv
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -18,6 +20,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from database.engine import engine, Base, SessionLocal
+from database.models import Medicine
 from routers import auth, risk, sms, voice, alerts, sos, call_protection, contacts, health, guardian, medication
 from services.risk_service import decay_all_scores
 
@@ -32,6 +35,64 @@ logger.addHandler(handler)
 
 # Create all tables
 Base.metadata.create_all(bind=engine)
+
+
+# ── Auto-seed medicines on first boot ──────────────────
+def _auto_seed_medicines():
+    """Seed the medicines table from CSV if it is empty (runs once on first deploy)."""
+    db = SessionLocal()
+    try:
+        count = db.query(Medicine).count()
+        if count > 0:
+            logger.info(f"Medicines already seeded ({count} records). Skipping.")
+            return
+
+        # Find CSV relative to this file (works on any OS / Render)
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        csv_path = os.path.join(backend_dir, "..", "A_Z_medicines_dataset_of_India.csv")
+        csv_path = os.path.normpath(csv_path)
+
+        if not os.path.exists(csv_path):
+            logger.warning(f"Medicine CSV not found at {csv_path}. Skipping auto-seed.")
+            return
+
+        logger.info(f"Auto-seeding medicines from {csv_path}...")
+        medicines = []
+        with open(csv_path, encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get('Is_discontinued', '').upper() == 'TRUE':
+                    continue
+                comp1 = row.get('short_composition1', '').strip()
+                comp2 = row.get('short_composition2', '').strip()
+                composition = f"{comp1} + {comp2}" if comp2 else comp1
+                name = row.get('name', '').strip()
+                if not name:
+                    continue
+                try:
+                    price = float(row.get('price(₹)', ''))
+                except (ValueError, TypeError):
+                    price = None
+                medicines.append({
+                    "name": name,
+                    "composition": composition,
+                    "manufacturer": row.get('manufacturer_name', '').strip(),
+                    "price": price,
+                    "type": row.get('type', '').strip(),
+                    "pack_size": row.get('pack_size_label', '').strip(),
+                })
+
+        CHUNK = 10000
+        for i in range(0, len(medicines), CHUNK):
+            db.bulk_insert_mappings(Medicine, medicines[i:i + CHUNK])
+            db.commit()
+            logger.info(f"Seeded {min(i + CHUNK, len(medicines))} / {len(medicines)}")
+
+        logger.info(f"Auto-seed complete: {len(medicines)} medicines inserted.")
+    except Exception as e:
+        logger.error(f"Auto-seed error: {e}")
+    finally:
+        db.close()
 
 
 # ── Background decay scheduler ─────────────────────────
@@ -53,7 +114,8 @@ async def _decay_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup/shutdown lifecycle — starts the decay background task."""
+    """Startup/shutdown lifecycle — auto-seeds DB + starts decay scheduler."""
+    _auto_seed_medicines()
     task = asyncio.create_task(_decay_loop())
     logger.info("Risk decay scheduler started (every 1 hour)")
     yield
