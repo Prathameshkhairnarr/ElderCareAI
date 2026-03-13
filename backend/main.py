@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from database.engine import engine, Base, SessionLocal
-from routers import auth, risk, sms, voice, alerts, sos, call_protection, contacts, health, guardian
+from routers import auth, risk, sms, voice, alerts, sos, call_protection, contacts, health, guardian, medication
 from services.risk_service import decay_all_scores
 
 # ── Structured Logging Setup ──
@@ -117,6 +117,7 @@ app.include_router(alerts.router, prefix="", tags=["Alerts"])
 app.include_router(sos.router, prefix="", tags=["SOS"])  # /sos at root
 app.include_router(call_protection.router, prefix="/call", tags=["Call Protection"])
 app.include_router(guardian.router, prefix="", tags=["Guardian"])
+app.include_router(medication.router, prefix="", tags=["Medications"])
 
 
 @app.get("/", tags=["Health"])

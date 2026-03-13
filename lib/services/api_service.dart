@@ -4,6 +4,7 @@ import '../models/risk_model.dart';
 import '../models/sms_model.dart';
 import '../models/guardian_model.dart';
 import '../models/alert_model.dart';
+import '../models/medication.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import 'auth_service.dart';
@@ -605,4 +606,89 @@ class ApiService {
       return 'Network error. Please check your connection.';
     }
   }
+
+  // ── Medications & Prescriptions ────────────────────
+  Future<List<Medicine>> searchMedicines(String query) async {
+    try {
+      if (query.length < 2) return [];
+      final encodedQuery = Uri.encodeComponent(query);
+      final result = await _http.get(
+        Uri.parse('$_baseUrl/medicines/search?q=$encodedQuery'),
+        headers: _headers,
+      );
+      if (result.isSuccess) {
+        final List<dynamic> data = await compute<String, dynamic>(jsonDecode, result.body);
+        return data.map((e) => Medicine.fromJson(e)).toList();
+      }
+      return [];
+    } catch (e) {
+      AppLogger.error(LogCategory.network, 'searchMedicines error: $e');
+      return [];
+    }
+  }
+
+  Future<List<UserMedication>> getUserMedications() async {
+    try {
+      final result = await _http.get(
+        Uri.parse('$_baseUrl/user/medications'),
+        headers: _headers,
+      );
+      if (result.isSuccess) {
+        final List<dynamic> data = await compute<String, dynamic>(jsonDecode, result.body);
+        return data.map((e) => UserMedication.fromJson(e)).toList();
+      }
+      return [];
+    } catch (e) {
+      AppLogger.error(LogCategory.network, 'getUserMedications error: $e');
+      return [];
+    }
+  }
+
+  Future<UserMedication?> addUserMedication({
+    required int medicineId,
+    double? dosageValue,
+    String? dosageUnit,
+    int frequencyPerDay = 1,
+    String? timeOfDay,
+    String? notes,
+  }) async {
+    try {
+      final body = {
+        'medicine_id': medicineId,
+        'dosage_value': dosageValue,
+        'dosage_unit': dosageUnit,
+        'frequency_per_day': frequencyPerDay,
+        'time_of_day': timeOfDay,
+        'notes': notes,
+      };
+      
+      final result = await _http.post(
+        Uri.parse('$_baseUrl/user/medications'),
+        headers: _headers,
+        body: jsonEncode(body),
+      );
+      if (result.isSuccess) {
+        final data = await compute<String, dynamic>(jsonDecode, result.body);
+        return UserMedication.fromJson(data);
+      }
+      return null;
+    } catch (e) {
+      AppLogger.error(LogCategory.network, 'addUserMedication error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> deleteUserMedication(int medId) async {
+    try {
+      final result = await _http.delete(
+        Uri.parse('$_baseUrl/user/medications/$medId'),
+        headers: _headers,
+      );
+      return result.statusCode == 204 || result.isSuccess;
+    } catch (e) {
+      AppLogger.error(LogCategory.network, 'deleteUserMedication error: $e');
+      return false;
+    }
+  }
 }
+

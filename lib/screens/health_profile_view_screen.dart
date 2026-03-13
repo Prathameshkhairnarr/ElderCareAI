@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/health_profile.dart';
+import '../models/medication.dart';
 import '../services/api_service.dart';
 import '../services/health_profile_service.dart';
 import '../services/app_logger.dart';
@@ -27,6 +28,8 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
 
+  List<UserMedication> _medications = [];
+
   // ── Form controllers ──
   final _heightController = TextEditingController();
   final _weightController = TextEditingController();
@@ -36,6 +39,23 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
 
   final _genders = ['male', 'female', 'other'];
   final _bloodGroups = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
+
+  final _predefinedConditions = [
+    'Diabetes',
+    'Hypertension',
+    'Asthma',
+    'Arthritis',
+    'Heart Disease',
+    'COPD',
+    'Osteoporosis',
+    'Alzheimer\'s',
+    'Kidney Disease',
+    'High Cholesterol',
+    'Thyroid Disorder',
+    'Stroke',
+    'Cancer',
+    'Other'
+  ];
 
   // ── Vitals data ──
   Map<String, dynamic>? _vitalsSummary;
@@ -130,18 +150,21 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
         _populateFromProfile(localProfile);
       }
 
-      // 2. API — vitals + profile in parallel
+      // 2. API — vitals + profile + medications in parallel
       try {
         final results = await Future.wait([
           _api.getHealthSummary(),
           _api.getHealthProfile(),
-        ]).timeout(const Duration(seconds: 5));
+          _api.getUserMedications(),
+        ]).timeout(const Duration(seconds: 8));
 
-        final summary = results[0];
-        final apiProfile = results[1];
+        final summary = results[0] as Map<String, dynamic>?;
+        final apiProfile = results[1] as Map<String, dynamic>?;
+        final meds = results[2] as List<UserMedication>;
 
         if (mounted) {
           _vitalsSummary = summary;
+          _medications = meds;
           if (summary != null) {
             _updateVital('heart_rate', summary['heart_rate']);
             _updateVital('steps', summary['steps']);
@@ -368,6 +391,11 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
                           _sectionTitle('Medical Conditions', cs),
                           const SizedBox(height: 12),
                           _buildMedicalConditionsSection(cs),
+                          const SizedBox(height: 20),
+
+                          _sectionTitle('Active Medications', cs),
+                          const SizedBox(height: 12),
+                          _buildMedicationsSection(cs),
                           const SizedBox(height: 20),
 
                           _sectionTitle('Emergency Contact', cs),
@@ -767,7 +795,8 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
           DropdownButtonFormField<String>(
             value: _selectedBloodGroup,
             dropdownColor: cs.surfaceContainerHighest,
-            style: TextStyle(color: cs.onSurface),
+            style: TextStyle(color: cs.onSurface, fontSize: 16),
+            icon: Icon(Icons.arrow_drop_down_rounded, color: cs.onSurface.withValues(alpha: 0.5)),
             decoration: _inputDecoration(
               label: 'Blood Group',
               icon: Icons.bloodtype_rounded,
@@ -908,25 +937,138 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
   Widget _buildMedicalConditionsSection(ColorScheme cs) {
     return _cardWrapper(
       cs,
-      child: TextFormField(
-        controller: _conditionsController,
-        maxLines: null,
-        minLines: 3,
-        style: TextStyle(color: cs.onSurface),
-        decoration:
-            _inputDecoration(
-              label: 'Medical Conditions',
-              icon: Icons.medical_information_rounded,
-              cs: cs,
-            ).copyWith(
-              hintText: 'e.g. diabetes, hypertension, arthritis...',
-              hintStyle: TextStyle(
-                color: cs.onSurface.withValues(alpha: 0.3),
-                fontSize: 13,
-              ),
-              alignLabelWithHint: true,
-            ),
+      child: InkWell(
+        onTap: () => _showMedicalConditionsBottomSheet(cs),
+        borderRadius: BorderRadius.circular(14),
+        child: IgnorePointer(
+          child: TextFormField(
+            controller: _conditionsController,
+            maxLines: null,
+            minLines: 1,
+            style: TextStyle(color: cs.onSurface),
+            decoration:
+                _inputDecoration(
+                  label: 'Medical Conditions',
+                  icon: Icons.medical_information_rounded,
+                  cs: cs,
+                ).copyWith(
+                  hintText: 'Tap to select conditions...',
+                  hintStyle: TextStyle(
+                    color: cs.onSurface.withValues(alpha: 0.3),
+                    fontSize: 13,
+                  ),
+                  suffixIcon: Icon(
+                    Icons.arrow_drop_down_rounded,
+                    color: cs.onSurface.withValues(alpha: 0.5),
+                  ),
+                  alignLabelWithHint: true,
+                ),
+          ),
+        ),
       ),
+    );
+  }
+
+  void _showMedicalConditionsBottomSheet(ColorScheme cs) {
+    List<String> selected = _conditionsController.text
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.7,
+              decoration: BoxDecoration(
+                color: cs.surface,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                children: [
+                  // Handle
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 8),
+                      height: 4,
+                      width: 40,
+                      decoration: BoxDecoration(
+                        color: cs.onSurface.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Select Conditions',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _conditionsController.text = selected.join(', ');
+                            });
+                            Navigator.pop(context);
+                          },
+                          child: const Text('Done', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  // List
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      itemCount: _predefinedConditions.length,
+                      itemBuilder: (context, index) {
+                        final condition = _predefinedConditions[index];
+                        final isSelected = selected.contains(condition);
+                        return CheckboxListTile(
+                          title: Text(
+                            condition,
+                            style: TextStyle(
+                              color: cs.onSurface,
+                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                            ),
+                          ),
+                          value: isSelected,
+                          activeColor: const Color(0xFF26A69A),
+                          checkColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          onChanged: (bool? val) {
+                            setSheetState(() {
+                              if (val == true) {
+                                selected.add(condition);
+                              } else {
+                                selected.remove(condition);
+                              }
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -1017,7 +1159,349 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
     );
   }
+
+  // ── Medications Section ───────────────────────
+  Widget _buildMedicationsSection(ColorScheme cs) {
+    return _cardWrapper(
+      cs,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_medications.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Text(
+                  'No active medications recorded.',
+                  style: TextStyle(color: cs.onSurface.withValues(alpha: 0.5)),
+                ),
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _medications.length,
+              separatorBuilder: (_, __) => Divider(color: cs.outline.withValues(alpha: 0.1)),
+              itemBuilder: (context, index) {
+                final med = _medications[index];
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    backgroundColor: const Color(0xFF4FC3F7).withValues(alpha: 0.15),
+                    child: const Icon(Icons.medication_rounded, color: Color(0xFF4FC3F7), size: 18),
+                  ),
+                  title: Text(
+                    med.medicine.name,
+                    style: TextStyle(fontWeight: FontWeight.w700, color: cs.onSurface),
+                  ),
+                  subtitle: Text(
+                    '${med.dosageValue != null ? med.dosageValue.toString() : ""} ${med.dosageUnit ?? ""} • ${med.frequencyPerDay}x / day',
+                    style: TextStyle(fontSize: 13, color: cs.onSurface.withValues(alpha: 0.6)),
+                  ),
+                  trailing: IconButton(
+                    icon: Icon(Icons.close_rounded, color: Colors.red.withValues(alpha: 0.6), size: 20),
+                    onPressed: () => _deleteMedication(med.id),
+                    tooltip: 'Remove',
+                  ),
+                );
+              },
+            ),
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: () => _showAddMedicationSheet(cs),
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Add Medication', style: TextStyle(fontWeight: FontWeight.w600)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF26A69A).withValues(alpha: 0.1),
+              foregroundColor: const Color(0xFF26A69A),
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              minimumSize: const Size(double.infinity, 48),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteMedication(int medId) async {
+    final success = await _api.deleteUserMedication(medId);
+    if (success) {
+      if (mounted) {
+        setState(() {
+          _medications.removeWhere((m) => m.id == medId);
+        });
+      }
+    }
+  }
+
+  void _showAddMedicationSheet(ColorScheme cs) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return _AddMedicationSheet(api: _api, colorScheme: cs, onAdded: (newMed) {
+          setState(() => _medications.insert(0, newMed));
+        });
+      },
+    );
+  }
 }
+
+class _AddMedicationSheet extends StatefulWidget {
+  final ApiService api;
+  final ColorScheme colorScheme;
+  final Function(UserMedication) onAdded;
+
+  const _AddMedicationSheet({
+    required this.api,
+    required this.colorScheme,
+    required this.onAdded,
+  });
+
+  @override
+  State<_AddMedicationSheet> createState() => _AddMedicationSheetState();
+}
+
+class _AddMedicationSheetState extends State<_AddMedicationSheet> {
+  final _searchController = TextEditingController();
+  List<Medicine> _searchResults = [];
+  bool _isSearching = false;
+  
+  Medicine? _selectedMedicine;
+  
+  final _dosageController = TextEditingController();
+  final _unitController = TextEditingController(text: 'mg');
+  int _frequency = 1;
+  bool _isSaving = false;
+
+  void _performSearch(String query) async {
+    if (query.trim().length < 2) {
+      if (mounted) setState(() => _searchResults = []);
+      return;
+    }
+    setState(() => _isSearching = true);
+    final results = await widget.api.searchMedicines(query.trim());
+    if (mounted) {
+      setState(() {
+        _searchResults = results;
+        _isSearching = false;
+      });
+    }
+  }
+
+  void _save() async {
+    if (_selectedMedicine == null) return;
+    setState(() => _isSaving = true);
+    
+    final med = await widget.api.addUserMedication(
+      medicineId: _selectedMedicine!.id,
+      dosageValue: double.tryParse(_dosageController.text),
+      dosageUnit: _unitController.text,
+      frequencyPerDay: _frequency,
+    );
+    
+    if (mounted) {
+      setState(() => _isSaving = false);
+      if (med != null) {
+        widget.onAdded(med);
+        Navigator.pop(context);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _dosageController.dispose();
+    _unitController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = widget.colorScheme;
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.85,
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        children: [
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              height: 4,
+              width: 40,
+              decoration: BoxDecoration(
+                color: cs.onSurface.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _selectedMedicine == null ? 'Find Medication' : 'Set Dosage',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: cs.onSurface),
+                ),
+                CloseButton(color: cs.onSurface),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: _selectedMedicine == null ? _buildSearchScreen(cs) : _buildDosageScreen(cs),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchScreen(ColorScheme cs) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: TextField(
+            controller: _searchController,
+            autofocus: true,
+            style: TextStyle(color: cs.onSurface),
+            decoration: InputDecoration(
+              hintText: 'Search for Dolo, Augmentin...',
+              hintStyle: TextStyle(color: cs.onSurface.withValues(alpha: 0.4)),
+              prefixIcon: Icon(Icons.search_rounded, color: cs.onSurface.withValues(alpha: 0.6)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              filled: true,
+              fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+            ),
+            onChanged: _performSearch,
+          ),
+        ),
+        if (_isSearching)
+          const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator())
+        else
+          Expanded(
+            child: ListView.builder(
+              itemCount: _searchResults.length,
+              itemBuilder: (context, index) {
+                final m = _searchResults[index];
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: const Color(0xFF4FC3F7).withValues(alpha: 0.15),
+                    child: const Icon(Icons.medication_rounded, color: Color(0xFF4FC3F7)),
+                  ),
+                  title: Text(m.name, style: TextStyle(fontWeight: FontWeight.w600, color: cs.onSurface)),
+                  subtitle: Text(
+                    '${m.composition ?? 'Unknown composition'} • ${m.manufacturer ?? 'Unknown manufacturer'}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: cs.onSurface.withValues(alpha: 0.6)),
+                  ),
+                  onTap: () {
+                    setState(() => _selectedMedicine = m);
+                  },
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildDosageScreen(ColorScheme cs) {
+    final m = _selectedMedicine!;
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: cs.primaryContainer.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(m.name, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: cs.onSurface)),
+              const SizedBox(height: 4),
+              Text(m.composition ?? 'N/A', style: TextStyle(fontSize: 13, color: cs.onSurface.withValues(alpha: 0.7))),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: TextFormField(
+                controller: _dosageController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                style: TextStyle(color: cs.onSurface),
+                decoration: InputDecoration(
+                  labelText: 'Dosage',
+                  labelStyle: TextStyle(color: cs.onSurface.withValues(alpha: 0.6)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: cs.outline.withValues(alpha: 0.2))),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 1,
+              child: TextFormField(
+                controller: _unitController,
+                style: TextStyle(color: cs.onSurface),
+                decoration: InputDecoration(
+                  labelText: 'Unit',
+                  labelStyle: TextStyle(color: cs.onSurface.withValues(alpha: 0.6)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: cs.outline.withValues(alpha: 0.2))),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        Text('Frequency: $_frequency per day', style: TextStyle(fontWeight: FontWeight.w600, color: cs.onSurface)),
+        Slider(
+          value: _frequency.toDouble(),
+          min: 1,
+          max: 6,
+          divisions: 5,
+          activeColor: const Color(0xFF26A69A),
+          onChanged: (val) => setState(() => _frequency = val.toInt()),
+        ),
+        const SizedBox(height: 32),
+        ElevatedButton(
+          onPressed: _isSaving ? null : _save,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF26A69A),
+            foregroundColor: Colors.white,
+            minimumSize: const Size(double.infinity, 52),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          child: _isSaving 
+            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5)) 
+            : const Text('Add Medication', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        ),
+        const SizedBox(height: 12),
+        TextButton(
+          onPressed: () => setState(() => _selectedMedicine = null),
+          child: Text('Back to Search', style: TextStyle(color: cs.primary)),
+        )
+      ],
+    );
+  }
+}
+
 
 // ── Vital data model (private) ──────────────────
 class _VitalData {

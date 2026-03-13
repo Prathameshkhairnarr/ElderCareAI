@@ -66,16 +66,11 @@ class IntentRouter {
 
     // ── Health Score ──
     _IntentBucket('health_score', {
-      'health',
-      'score',
-      'status',
-      'sehat',
-      'tabiyat',
-      'batao',
-      'check',
+      'health score',
+      'health status',
+      'mera score',
       'bmi',
-      'weight',
-      'age',
+      'weight batao',
     }),
 
     // ── Risk Level ──
@@ -93,13 +88,10 @@ class IntentRouter {
 
     // ── SMS Check ──
     _IntentBucket('sms_check', {
-      'sms',
-      'message',
-      'text',
-      'scam',
-      'fraud',
-      'scan',
-      'dekho',
+      'scan sms',
+      'check message',
+      'sms fraud',
+      'message scan',
     }),
 
     // ── Help ──
@@ -157,19 +149,13 @@ class IntentRouter {
 
     // ── Medicine ──
     _IntentBucket('medicine', {
-      'medicine',
-      'dawai',
-      'dawa',
-      'tablet',
-      'goli',
       'medicine time',
       'dawai time',
       'dawai kab',
-      'reminder',
-      'yaad',
+      'reminder check',
       'le li',
       'kha li',
-      'taken',
+      'taken medicine',
     }),
 
     // ── System Status ──

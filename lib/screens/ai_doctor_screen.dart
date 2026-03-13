@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../voice/voice_controller.dart';
+import '../models/medication.dart';
 import '../services/emergency_service.dart';
 import '../services/api_service.dart';
 import '../services/health_profile_service.dart';
@@ -448,19 +449,42 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
 //  2. MEDICATION REMINDER CARD
 // ═══════════════════════════════════════════════════════════════
 
-class _MedicationReminderCard extends StatelessWidget {
+class _MedicationReminderCard extends StatefulWidget {
   const _MedicationReminderCard();
+
+  @override
+  State<_MedicationReminderCard> createState() => _MedicationReminderCardState();
+}
+
+class _MedicationReminderCardState extends State<_MedicationReminderCard> {
+  final _api = ApiService();
+  bool _loading = true;
+  List<UserMedication> _medications = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMeds();
+  }
+
+  Future<void> _loadMeds() async {
+    try {
+      final meds = await _api.getUserMedications();
+      if (mounted) {
+        setState(() {
+          _medications = meds;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     const accentColor = Color(0xFF66BB6A); // calm green
-
-    // Demo data — replace with dynamic data later
-    final medications = [
-      {'name': 'Paracetamol', 'time': '08:00 PM', 'dosage': '500 mg'},
-      {'name': 'Metformin', 'time': '09:00 PM', 'dosage': '250 mg'},
-    ];
 
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
@@ -512,7 +536,7 @@ class _MedicationReminderCard extends StatelessWidget {
                 const SizedBox(width: 14),
                 Expanded(
                   child: Text(
-                    'Medication Reminder',
+                    'Active Medications',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
@@ -542,83 +566,99 @@ class _MedicationReminderCard extends StatelessWidget {
             ),
             const SizedBox(height: 18),
 
-            // Medication list
-            ...medications.map(
-              (med) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  decoration: BoxDecoration(
-                    color: cs.surface.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: accentColor.withValues(alpha: 0.12),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.circle, size: 10, color: accentColor),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              med['name']!,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: cs.onSurface,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              med['dosage']!,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: cs.onSurface.withValues(alpha: 0.5),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: accentColor.withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.access_time_rounded,
-                              size: 14,
-                              color: accentColor,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              med['time']!,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: accentColor,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+            if (_loading)
+              const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
+            else if (_medications.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Center(
+                  child: Text(
+                    'No active medications tracking.',
+                    style: TextStyle(color: cs.onSurface.withValues(alpha: 0.5)),
                   ),
                 ),
-              ),
-            ),
+              )
+            else
+              // Medication list
+              ..._medications.map((med) {
+                final dosage = '${med.dosageValue != null ? med.dosageValue.toString() : ""} ${med.dosageUnit ?? ""}';
+                final time = med.timeOfDay ?? '${med.frequencyPerDay}x / day';
+                
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: cs.surface.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: accentColor.withValues(alpha: 0.12),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.circle, size: 10, color: accentColor),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                med.medicine.name,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: cs.onSurface,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                dosage.trim().isNotEmpty ? dosage.trim() : 'As prescribed',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: cs.onSurface.withValues(alpha: 0.5),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: accentColor.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.access_time_rounded,
+                                size: 14,
+                                color: accentColor,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                time,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: accentColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
           ],
         ),
       ),

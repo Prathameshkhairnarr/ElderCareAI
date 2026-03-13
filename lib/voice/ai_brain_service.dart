@@ -4,10 +4,10 @@ import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 import '../services/app_logger.dart';
+import '../services/api_service.dart';
 import '../services/health_profile_service.dart';
 import '../services/risk_score_provider.dart';
 import '../services/system_status_manager.dart';
-import '../services/medicine_reminder_service.dart';
 import '../services/user_memory_service.dart';
 import 'action_handler.dart';
 import 'conversation_memory.dart';
@@ -47,8 +47,8 @@ class AiBrainService {
   final _healthService = HealthProfileService();
   final _riskProvider = RiskScoreProvider();
 
-  /// API call timeout — reduced for faster fallback.
-  static const _apiTimeout = Duration(seconds: 6);
+  /// API call timeout — increased to allow full detailed medical responses.
+  static const _apiTimeout = Duration(seconds: 12);
 
   /// Concurrency guard — prevent multiple simultaneous AI calls.
   bool _aiCallInProgress = false;
@@ -72,14 +72,9 @@ class AiBrainService {
       'Use respectful "aap" form in Hindi. Use conversational phrasing like "Lagta hai aapko...", "Aap fikar mat kijiye...". '
       '\n'
       'MEDICAL RESPONSE STRUCTURE (CRITICAL): '
-      'Whenever a user asks about symptoms or a disease, you MUST respond in this format: '
-      '1. Possible condition: [What it might be] '
-      '2. Simple explanation: [Simple terms for elders] '
-      '3. Common symptoms: [Typical signs] '
-      '4. Common medicines used: [Standard options] '
-      '5. Typical dosage range: [Typical adult range from references] '
-      '6. Advice: [Lifestyle/General tips] '
-      '7. Doctor warning: [When to see a pro] '
+      'When explaining symptoms or diseases, structure your thoughts in this order: Condition -> Simple Explanation -> Symptoms -> Medicines -> Typical Dosage -> Advice -> Doctor Warning. '
+      'HOWEVER, DO NOT use bullet points, numbering (1., 2.), or labels (like "Possible condition:", "Explanation:"). '
+      'Weave all 7 elements naturally into a smooth paragraph. Speak as if talking to a patient face-to-face. '
       '\n'
       'MEDICINE INFORMATION RULES: '
       'Include: purpose, typical adult dosage range, common side effects, precautions, and warnings for children/elderly. '
@@ -90,10 +85,10 @@ class AiBrainService {
       'IMMEDIATELY respond with an Emergency warning and instructions to seek urgent medical care. '
       '\n'
       'RESPONSE FORMAT RULES (CRITICAL): '
-      'A) For NORMAL CONVERSATION/HEALTH: return ONLY plain text, follow structure if medical. Keep it short (max 5-6 sentences total for voice). '
-      'B) For APP CONTROL COMMANDS: return ONLY a JSON object, no extra text, no markdown. '
+      'A) For NORMAL CONVERSATION or HEALTH QUESTIONS: return ONLY plain text. NEVER return JSON. DO NOT use asterisks (*) or markdown. '
+      'B) For STRICT APP CONTROL COMMANDS: return ONLY a JSON object, no extra text, no markdown. '
       '\n'
-      'SUPPORTED JSON ACTIONS: '
+      'SUPPORTED JSON ACTIONS (ONLY FOR DIRECT APP CONTROL): '
       '1. Change theme: {"action":"change_theme","value":"dark"} '
       '2. Send SOS: {"action":"send_sos"} '
       '3. Update health: {"action":"update_health_profile","field":"weight","value":"72"} '
@@ -107,7 +102,9 @@ class AiBrainService {
       '   Screens: health_profile, medication, sos, dashboard '
       '\n'
       'GENERAL RULES: '
-      'Never mix JSON and text. Never say you are an AI. '
+      'IF the user asks a health question (e.g., "mujhe bukhar hai"), DO NOT use JSON. Use plain text. '
+      'IF the user gives an explicit app command (e.g., "dark mode on karo"), use JSON. '
+      'Never say you are an AI. '
       'Respond in the same language the user spoke in (Hinglish/Hindi/English). '
       'If user name is known, address them respectfully with "ji".';
 
@@ -163,7 +160,7 @@ class AiBrainService {
         ).timeout(_apiTimeout);
 
         if (aiText != null && aiText.isNotEmpty) {
-          final safe = _limitSentences(aiText, 3);
+          final safe = _limitSentences(aiText, 8);
           final emotion = EmotionTagger.tag(safe);
           _memory.addTurn(userInput, safe);
 
@@ -191,7 +188,7 @@ class AiBrainService {
         ).timeout(_apiTimeout);
 
         if (aiText != null && aiText.isNotEmpty) {
-          final safe = _limitSentences(aiText, 3);
+          final safe = _limitSentences(aiText, 8);
           final emotion = EmotionTagger.tag(safe);
           _memory.addTurn(userInput, safe);
 
@@ -258,38 +255,25 @@ class AiBrainService {
 
   bool _looksLikeSystemQuery(String rawText, String normalized) {
     const systemKeywords = {
-      'health',
-      'score',
-      'sehat',
-      'tabiyat',
+      'health score',
+      'health status',
       'bmi',
-      'risk',
       'suraksha',
-      'safe',
-      'sms',
-      'scan',
-      'scam',
-      'fraud',
+      'scan sms',
+      'check message',
       'sos',
       'emergency',
       'ambulance',
       'bachao',
-      'dawai',
-      'medicine',
-      'tablet',
-      'goli',
-      'reminder',
-      'status',
-      'system',
-      'module',
-      'listener',
+      'medicine time',
+      'reminder check',
+      'system status',
       'chal raha',
       'console',
       'active',
       'namaste',
       'namaskar',
       'hello',
-      'hi',
       'shukriya',
       'dhanyawad',
     };
@@ -332,7 +316,7 @@ class AiBrainService {
     String rawInput,
     DetectedLanguage language,
   ) async {
-    final context = _buildContext(language);
+    final context = await _buildContext(language);
     final history = _memory.getFormattedHistory();
 
     // Build user message with context
@@ -348,7 +332,7 @@ class AiBrainService {
         {'role': 'user', 'content': userMessage.toString()},
       ],
       'temperature': 0.6,
-      'max_tokens': 120,
+      'max_tokens': 500,
     });
 
     final response = await http.post(
@@ -391,7 +375,7 @@ class AiBrainService {
     String normalizedInput,
     DetectedLanguage language,
   ) async {
-    final context = _buildContext(language);
+    final context = await _buildContext(language);
     final history = _memory.getFormattedHistory();
 
     final userMessage = StringBuffer();
@@ -412,7 +396,7 @@ class AiBrainService {
         'temperature': 0.6,
         'topP': 0.9,
         'topK': 40,
-        'maxOutputTokens': 120,
+        'maxOutputTokens': 500,
       },
       'safetySettings': [
         {
@@ -495,7 +479,7 @@ class AiBrainService {
   //  CONTEXT BUILDER
   // ══════════════════════════════════════════════════════
 
-  String _buildContext(DetectedLanguage language) {
+  Future<String> _buildContext(DetectedLanguage language) async {
     final parts = <String>[];
 
     // Time/date
@@ -559,9 +543,19 @@ class AiBrainService {
       'Modules: ${SystemStatusManager.instance.activeModuleCount}/8 active',
     );
 
-    // Medicine
-    final medCount = MedicineReminderService.instance.reminders.length;
-    if (medCount > 0) parts.add('Meds: $medCount reminders');
+    // Active Medications from Database
+    try {
+      final userMeds = await ApiService().getUserMedications().timeout(const Duration(seconds: 2));
+      if (userMeds.isNotEmpty) {
+        final medStrings = userMeds.map((m) {
+          final dose = m.dosageValue != null ? '${m.dosageValue}${m.dosageUnit ?? ""}' : '';
+          return '${m.medicine.name} ($dose)'.trim();
+        });
+        parts.add('Active Meds: ${medStrings.join(', ')}');
+      }
+    } catch (_) {
+      // Ignore network errors or timeouts during context building
+    }
 
     return parts.join(' | ');
   }

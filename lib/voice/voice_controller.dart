@@ -229,9 +229,6 @@ class VoiceController extends ChangeNotifier {
   //  AI-POWERED PROCESSING PIPELINE
   // ══════════════════════════════════════════════
 
-  /// Overall pipeline timeout — prevents infinite hangs.
-  static const _pipelineTimeout = Duration(seconds: 15);
-
   void _processTranscript(String text) async {
     // ── Debounce: prevent duplicate processing from rapid STT callbacks ──
     if (_processingInProgress) {
@@ -256,16 +253,7 @@ class VoiceController extends ChangeNotifier {
     await _stt.cancel();
 
     try {
-      await _processTranscriptInner(text).timeout(_pipelineTimeout);
-    } on TimeoutException {
-      AppLogger.error(
-        LogCategory.lifecycle,
-        '[VOICE] Pipeline timeout after ${_pipelineTimeout.inSeconds}s',
-      );
-      _response = "Thoda time lag raha hai. Dobara try karein.";
-      try {
-        await _speakResponse(_response, 'hi-IN');
-      } catch (_) {}
+      await _processTranscriptInner(text);
     } catch (e) {
       AppLogger.error(LogCategory.lifecycle, '[VOICE] Pipeline error: $e');
       _response = "Kuch gadbad ho gayi. Dobara try karein.";

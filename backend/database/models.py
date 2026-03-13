@@ -37,6 +37,8 @@ class User(Base):
     health_vitals = sqlalchemy_relationship("HealthVital", back_populates="user")
     health_profile = sqlalchemy_relationship("HealthProfile", back_populates="user", uselist=False)
     guardians = sqlalchemy_relationship("Guardian", back_populates="user")
+    user_medications = sqlalchemy_relationship("UserMedication", back_populates="user")
+    prescriptions = sqlalchemy_relationship("Prescription", back_populates="user")
 
 
 class HealthProfile(Base):
@@ -206,4 +208,73 @@ class ProcessedMessage(Base):
     msg_hash = Column(String(64), unique=True, index=True, nullable=False)
     label = Column(String(20), nullable=False)
     created_at = Column(DateTime, default=_utcnow)
+
+
+class Medicine(Base):
+    """Global database of medicines populated from CSV."""
+    __tablename__ = "medicines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    composition = Column(Text, nullable=True)
+    manufacturer = Column(String(255), nullable=True)
+    price = Column(Float, nullable=True)
+    type = Column(String(50), nullable=True)
+    pack_size = Column(String(100), nullable=True)
+
+    user_medications = sqlalchemy_relationship("UserMedication", back_populates="medicine")
+    prescription_items = sqlalchemy_relationship("PrescriptionItem", back_populates="medicine")
+
+
+class UserMedication(Base):
+    """A mapping of medicines currently taken by the user."""
+    __tablename__ = "user_medications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    medicine_id = Column(Integer, ForeignKey("medicines.id"), nullable=False)
+    
+    dosage_value = Column(Float, nullable=True)
+    dosage_unit = Column(String(50), nullable=True)
+    frequency_per_day = Column(Integer, default=1)
+    time_of_day = Column(String(100), nullable=True)
+    start_date = Column(DateTime, nullable=True)
+    end_date = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    user = sqlalchemy_relationship("User", back_populates="user_medications")
+    medicine = sqlalchemy_relationship("Medicine", back_populates="user_medications")
+
+
+class Prescription(Base):
+    """High-level record of a doctor's prescription."""
+    __tablename__ = "prescriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    doctor_name = Column(String(150), nullable=True)
+    prescription_date = Column(DateTime, default=_utcnow)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    user = sqlalchemy_relationship("User", back_populates="prescriptions")
+    items = sqlalchemy_relationship("PrescriptionItem", back_populates="prescription", cascade="all, delete-orphan")
+
+
+class PrescriptionItem(Base):
+    """Details of each medication within a prescription."""
+    __tablename__ = "prescription_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    prescription_id = Column(Integer, ForeignKey("prescriptions.id"), nullable=False)
+    medicine_id = Column(Integer, ForeignKey("medicines.id"), nullable=False)
+    
+    dosage = Column(String(100), nullable=True)
+    frequency = Column(String(100), nullable=True)
+    duration_days = Column(Integer, nullable=True)
+
+    prescription = sqlalchemy_relationship("Prescription", back_populates="items")
+    medicine = sqlalchemy_relationship("Medicine", back_populates="prescription_items")
+
 
