@@ -299,17 +299,161 @@ class _AddContactDialogState extends State<AddContactDialog> {
   ];
 
   Future<void> _pickContact() async {
-    if (await FlutterContacts.requestPermission()) {
-      final contact = await FlutterContacts.openExternalPick();
-      if (contact != null) {
-        setState(() {
-          _nameCtrl.text = contact.displayName;
-          if (contact.phones.isNotEmpty) {
-            _phoneCtrl.text = contact.phones.first.number;
-          }
-        });
+    bool loadingOpen = false;
+    try {
+      if (await FlutterContacts.requestPermission(readonly: true)) {
+        loadingOpen = true;
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const Center(child: CircularProgressIndicator()),
+        );
+        
+        // Fetch contacts internally to avoid exiting the app and getting killed by OS memory manager
+        final contacts = await FlutterContacts.getContacts(withProperties: true);
+        
+        if (loadingOpen && mounted) {
+          Navigator.pop(context);
+          loadingOpen = false;
+        }
+
+        if (contacts.isNotEmpty && mounted) {
+          _showContactPickerSheet(contacts);
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No contacts found on device')),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Contacts permission is required')),
+          );
+        }
+      }
+    } catch (e) {
+      if (loadingOpen && mounted) {
+        Navigator.pop(context);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not load contacts: $e')),
+        );
       }
     }
+  }
+
+  void _showContactPickerSheet(List<Contact> contacts) {
+    String searchQuery = '';
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF16213E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            final filteredContacts = contacts.where((c) {
+              if (c.phones.isEmpty) return false;
+              final q = searchQuery.toLowerCase();
+              return c.displayName.toLowerCase().contains(q) || 
+                     c.phones.any((p) => p.number.replaceAll(RegExp(r'[^0-9+]'), '').contains(q));
+            }).toList();
+
+            return DraggableScrollableSheet(
+              initialChildSize: 0.8,
+              maxChildSize: 0.95,
+              minChildSize: 0.5,
+              expand: false,
+              builder: (context, scrollController) {
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Select Contact',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          CloseButton(color: Colors.white, onPressed: () => Navigator.pop(context)),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                      child: TextField(
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'Search by name or number...',
+                          hintStyle: const TextStyle(color: Colors.white54),
+                          prefixIcon: const Icon(Icons.search, color: Color(0xFF4FC3F7)),
+                          filled: true,
+                          fillColor: Colors.white.withValues(alpha: 0.05),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                        onChanged: (value) {
+                          setModalState(() {
+                            searchQuery = value;
+                          });
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: filteredContacts.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'No contacts found.',
+                                style: TextStyle(color: Colors.white54),
+                              ),
+                            )
+                          : ListView.builder(
+                              controller: scrollController,
+                              itemCount: filteredContacts.length,
+                              itemBuilder: (context, index) {
+                                final c = filteredContacts[index];
+                                
+                                return ListTile(
+                                  leading: CircleAvatar(
+                                    backgroundColor: const Color(0xFF4FC3F7),
+                                    child: Text(
+                                      c.displayName.isNotEmpty ? c.displayName[0].toUpperCase() : '?',
+                                      style: const TextStyle(color: Color(0xFF16213E), fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                  title: Text(c.displayName, style: const TextStyle(color: Colors.white)),
+                                  subtitle: Text(c.phones.first.number, style: const TextStyle(color: Colors.white54)),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    setState(() {
+                                      _nameCtrl.text = c.displayName;
+                                      _phoneCtrl.text = c.phones.first.number;
+                                    });
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                );
+              },
+            );
+          }
+        );
+      },
+    );
   }
 
   Future<void> _pickImage() async {

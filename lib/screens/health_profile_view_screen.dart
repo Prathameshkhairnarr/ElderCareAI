@@ -156,11 +156,13 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
           _api.getHealthSummary(),
           _api.getHealthProfile(),
           _api.getUserMedications(),
+          _api.getHealthScore(),
         ]).timeout(const Duration(seconds: 8));
 
         final summary = results[0] as Map<String, dynamic>?;
         final apiProfile = results[1] as Map<String, dynamic>?;
         final meds = results[2] as List<UserMedication>;
+        final scoreData = results[3] as Map<String, dynamic>?;
 
         if (mounted) {
           _vitalsSummary = summary;
@@ -172,6 +174,10 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
             _updateVital('bp', summary['bp']);
             _updateVital('sleep', summary['sleep']);
             _updateVital('temperature', summary['temperature']);
+          }
+          if (scoreData != null) {
+            _healthScore = scoreData['score'] ?? 80;
+            _healthStatus = scoreData['status'] ?? 'Fair';
           }
 
           // Merge API profile if local was empty
@@ -447,17 +453,22 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
   }
 
   // ── Health Score Card ──────────────────────────
+  // Backend health score
+  int _healthScore = 80;
+  String _healthStatus = 'Fair';
+
   Widget _buildHealthScoreCard(ColorScheme cs) {
-    int healthScore = 85;
-    if (_vitalsSummary != null) {
-      if (_vitalsSummary!['heart_rate'] == null) healthScore -= 5;
-      if (_vitalsSummary!['spo2'] != null &&
-          _vitalsSummary!['spo2']['value'] < 95) {
-        healthScore -= 10;
-      }
+    final healthScore = _healthScore;
+    String emoji;
+    if (_healthStatus == 'Excellent') {
+      emoji = '✨';
+    } else if (_healthStatus == 'Good') {
+      emoji = '👍';
+    } else if (_healthStatus == 'Fair') {
+      emoji = '⚠️';
+    } else {
+      emoji = '🚨';
     }
-    final age = _profileService.profile.age;
-    if (age != null && age > 65) healthScore -= 5;
 
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
@@ -533,7 +544,7 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    healthScore > 80 ? '✨ Good' : '⚠️ Fair',
+                    '$emoji $_healthStatus',
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w600,

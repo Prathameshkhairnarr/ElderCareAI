@@ -26,6 +26,8 @@ dependencies:
   flutter_tts: ^4.2.5
   another_telephony: ^0.4.0
   sensors_plus: ^6.1.1
+  pedometer: ^4.0.2
+  health: ^11.1.0
   vibration: ^2.0.0
   just_audio: ^0.9.40
   path_provider: ^2.1.0

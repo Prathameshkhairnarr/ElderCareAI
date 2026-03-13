@@ -330,6 +330,53 @@ class ApiService {
     }
   }
 
+  /// Batch-sync vitals from Health Connect / sensors / manual entry.
+  Future<bool> syncVitalsBatch({
+    double? steps,
+    double? heartRate,
+    double? spo2,
+    double? sleepHours,
+    double? temperature,
+    double? bpSystolic,
+  }) async {
+    try {
+      final body = <String, dynamic>{};
+      if (steps != null) body['steps'] = steps;
+      if (heartRate != null) body['heart_rate'] = heartRate;
+      if (spo2 != null) body['spo2'] = spo2;
+      if (sleepHours != null) body['sleep_hours'] = sleepHours;
+      if (temperature != null) body['temperature'] = temperature;
+      if (bpSystolic != null) body['bp_systolic'] = bpSystolic;
+
+      final result = await _http.post(
+        Uri.parse('$_baseUrl/health/vitals'),
+        headers: _headers,
+        body: jsonEncode(body),
+      );
+      return result.isSuccess;
+    } catch (e) {
+      AppLogger.error(LogCategory.network, 'syncVitalsBatch error: $e');
+      return false;
+    }
+  }
+
+  /// Fetch computed health score from backend.
+  Future<Map<String, dynamic>?> getHealthScore() async {
+    try {
+      final result = await _http.get(
+        Uri.parse('$_baseUrl/health/score'),
+        headers: _headers,
+      );
+      if (result.isSuccess) {
+        return await compute<String, dynamic>(jsonDecode, result.body);
+      }
+      return null;
+    } catch (e) {
+      AppLogger.error(LogCategory.network, 'getHealthScore error: $e');
+      return null;
+    }
+  }
+
   // ── Health Profile ──────────────────────────────────
   Future<Map<String, dynamic>?> getHealthProfile() async {
     const cacheKey = 'cache_health_profile';

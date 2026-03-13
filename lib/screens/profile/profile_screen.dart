@@ -1188,17 +1188,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             // ── SAFETY ──
             _buildSectionTitle('Safety', cs),
             const SizedBox(height: 10),
-            _buildActionTile(
-              icon: Icons.contacts_rounded,
-              title: 'Emergency Contacts',
-              subtitle: 'Manage your emergency contacts',
-              color: const Color(0xFFEF5350),
-              cs: cs,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ContactsScreen()),
-              ),
-            ),
+
             _buildToggleTile(
               icon: Icons.record_voice_over_rounded,
               title: 'Voice Alerts',

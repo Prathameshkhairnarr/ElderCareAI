@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/health_sync_service.dart';
+import '../services/app_logger.dart';
 
 class HealthMonitorScreen extends StatefulWidget {
   const HealthMonitorScreen({super.key});
@@ -10,8 +12,11 @@ class HealthMonitorScreen extends StatefulWidget {
 
 class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
   final _api = ApiService();
+  final _syncService = HealthSyncService();
   bool _isLoading = true;
-  
+  bool _isSyncing = false;
+  String _lastSyncSource = 'none';
+
   // Default structure, values will be updated from backend
   final Map<String, _VitalData> _vitals = {
     'heart_rate': _VitalData(
@@ -71,41 +76,249 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
     ),
   };
 
+  // Health score from backend
+  int _healthScore = 80;
+  String _healthStatus = 'Fair';
+
   @override
   void initState() {
     super.initState();
-    _fetchData();
+    _initAndSync();
   }
 
-  Future<void> _fetchData() async {
+  @override
+  void dispose() {
+    _syncService.stopSensorFallback();
+    super.dispose();
+  }
+
+  Future<void> _initAndSync() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
+
     try {
-      final data = await _api.getHealthSummary();
-      if (data != null && mounted) {
+      // Initialize Health Connect service
+      await _syncService.initialize();
+
+      // Run the full sync chain (Health Connect → sensor → manual)
+      final source = await _syncService.syncAll();
+      _lastSyncSource = source;
+
+      // Now fetch backend data (summary + score)
+      await _fetchFromBackend();
+    } catch (e) {
+      AppLogger.error(LogCategory.lifecycle, 'Health sync init failed: $e');
+    }
+
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _fetchFromBackend() async {
+    try {
+      final results = await Future.wait([
+        _api.getHealthSummary(),
+        _api.getHealthScore(),
+      ]).timeout(const Duration(seconds: 8));
+
+      final summary = results[0];
+      final scoreData = results[1];
+
+      if (mounted) {
         setState(() {
-          _updateVital('heart_rate', data['heart_rate']);
-          _updateVital('steps', data['steps']);
-          _updateVital('spo2', data['spo2']);
-          _updateVital('bp', data['bp']);
-          _updateVital('sleep', data['sleep']);
-          _updateVital('temperature', data['temperature']);
+          if (summary != null) {
+            _updateVital('heart_rate', summary['heart_rate']);
+            _updateVital('steps', summary['steps']);
+            _updateVital('spo2', summary['spo2']);
+            _updateVital('bp', summary['bp']);
+            _updateVital('sleep', summary['sleep']);
+            _updateVital('temperature', summary['temperature']);
+          }
+          if (scoreData != null) {
+            _healthScore = scoreData['score'] ?? 80;
+            _healthStatus = scoreData['status'] ?? 'Fair';
+          }
         });
       }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+    } catch (e) {
+      AppLogger.error(LogCategory.network, 'Backend fetch failed: $e');
     }
   }
 
   void _updateVital(String key, dynamic backendData) {
     if (backendData != null && _vitals.containsKey(key)) {
       _vitals[key]!.value = (backendData['value'] as num).toDouble();
-      // Logic to determine status based on thresholds could go here
     }
   }
 
   Future<void> _refreshData() async {
-    await _fetchData();
+    setState(() => _isSyncing = true);
+    try {
+      // Re-sync from devices/sensors
+      final source = await _syncService.syncAll();
+      _lastSyncSource = source;
+      // Then refresh from backend
+      await _fetchFromBackend();
+    } catch (e) {
+      AppLogger.error(LogCategory.lifecycle, 'Refresh failed: $e');
+    }
+    if (mounted) setState(() => _isSyncing = false);
+  }
+
+  // ── Manual Entry Bottom Sheet ─────────────────────────
+  void _showManualEntrySheet() {
+    final hrCtrl = TextEditingController();
+    final stepsCtrl = TextEditingController();
+    final spo2Ctrl = TextEditingController();
+    final bpCtrl = TextEditingController();
+    final sleepCtrl = TextEditingController();
+    final tempCtrl = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+            decoration: BoxDecoration(
+              color: Theme.of(ctx).colorScheme.surface,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(28),
+              ),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Theme.of(ctx)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.edit_rounded, color: Color(0xFF4FC3F7), size: 24),
+                      SizedBox(width: 8),
+                      Text(
+                        'Enter Vitals Manually',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  _manualField(hrCtrl, 'Heart Rate', 'bpm', Icons.favorite_rounded, const Color(0xFFEF5350)),
+                  const SizedBox(height: 10),
+                  _manualField(stepsCtrl, 'Steps Today', 'steps', Icons.directions_walk_rounded, const Color(0xFF7C4DFF)),
+                  const SizedBox(height: 10),
+                  _manualField(spo2Ctrl, 'SpO2', '%', Icons.air_rounded, const Color(0xFF26A69A)),
+                  const SizedBox(height: 10),
+                  _manualField(bpCtrl, 'Blood Pressure (systolic)', 'mmHg', Icons.speed_rounded, const Color(0xFF42A5F5)),
+                  const SizedBox(height: 10),
+                  _manualField(sleepCtrl, 'Sleep Hours', 'hrs', Icons.bedtime_rounded, const Color(0xFF5C6BC0)),
+                  const SizedBox(height: 10),
+                  _manualField(tempCtrl, 'Temperature', '°F', Icons.thermostat_rounded, const Color(0xFFFFA726)),
+                  const SizedBox(height: 24),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        // Parse values
+                        _syncService.setManualVitals(
+                          heartRate: double.tryParse(hrCtrl.text),
+                          steps: double.tryParse(stepsCtrl.text),
+                          spo2: double.tryParse(spo2Ctrl.text),
+                          bp: double.tryParse(bpCtrl.text),
+                          sleepHours: double.tryParse(sleepCtrl.text),
+                          temperature: double.tryParse(tempCtrl.text),
+                        );
+                        // Sync to backend
+                        await _syncService.syncToBackend();
+                        if (context.mounted) Navigator.pop(ctx);
+                        // Refresh data
+                        await _fetchFromBackend();
+
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Row(
+                                children: [
+                                  Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                                  SizedBox(width: 10),
+                                  Text('Vitals saved successfully!'),
+                                ],
+                              ),
+                              behavior: SnackBarBehavior.floating,
+                              backgroundColor: const Color(0xFF26A69A),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.save_rounded),
+                      label: const Text(
+                        'Save Vitals',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF26A69A),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        elevation: 0,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _manualField(
+    TextEditingController ctrl,
+    String label,
+    String unit,
+    IconData icon,
+    Color color,
+  ) {
+    return TextField(
+      controller: ctrl,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+      decoration: InputDecoration(
+        labelText: '$label ($unit)',
+        prefixIcon: Icon(icon, color: color, size: 20),
+        filled: true,
+        fillColor: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.3),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
   }
 
   @override
@@ -118,28 +331,42 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
         scrolledUnderElevation: 0,
         actions: [
           IconButton(
-            onPressed: _refreshData,
-            icon: _isLoading
+            onPressed: _isSyncing ? null : _refreshData,
+            icon: _isSyncing
                 ? const SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.refresh_rounded),
-            tooltip: 'Refresh',
+            tooltip: 'Sync & Refresh',
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showManualEntrySheet,
+        backgroundColor: const Color(0xFF4FC3F7),
+        icon: const Icon(Icons.edit_rounded, color: Colors.white),
+        label: const Text(
+          'Manual Entry',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+        ),
       ),
       body: _isLoading && _vitals.values.every((v) => v.value == 0)
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 80),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Summary card
-                  _buildSummaryCard(),
+                  // Health Score card (from backend)
+                  _buildHealthScoreCard(),
+                  const SizedBox(height: 16),
+
+                  // Data source badge
+                  _buildDataSourceBadge(),
                   const SizedBox(height: 24),
+
                   Text(
                     'Vitals',
                     style: TextStyle(
@@ -149,6 +376,7 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
+
                   // Vitals grid
                   GridView.builder(
                     shrinkWrap: true,
@@ -166,6 +394,7 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
                     },
                   ),
                   const SizedBox(height: 24),
+
                   // Tips section
                   _buildTipsSection(),
                 ],
@@ -174,7 +403,18 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
     );
   }
 
-  Widget _buildSummaryCard() {
+  Widget _buildHealthScoreCard() {
+    String emoji;
+    if (_healthStatus == 'Excellent') {
+      emoji = '✨';
+    } else if (_healthStatus == 'Good') {
+      emoji = '👍';
+    } else if (_healthStatus == 'Fair') {
+      emoji = '⚠️';
+    } else {
+      emoji = '🚨';
+    }
+
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
       duration: const Duration(milliseconds: 600),
@@ -184,14 +424,14 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [Color(0xFF26A69A), Color(0xFF00897B)],
+            colors: [Color(0xFFEC407A), Color(0xFFAD1457)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF26A69A).withValues(alpha: 0.3),
+              color: const Color(0xFFEC407A).withValues(alpha: 0.3),
               blurRadius: 16,
               offset: const Offset(0, 6),
             ),
@@ -202,14 +442,10 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
           children: [
             const Row(
               children: [
-                Icon(
-                  Icons.monitor_heart_rounded,
-                  color: Colors.white,
-                  size: 28,
-                ),
+                Icon(Icons.favorite_rounded, color: Colors.white, size: 28),
                 SizedBox(width: 10),
                 Text(
-                  'Overall Health',
+                  'Health Score',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -218,19 +454,60 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            const Text(
-              'Your vitals are being monitored. Syncing with backend...',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.white70,
-                height: 1.4,
-              ),
+            const SizedBox(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '$_healthScore',
+                  style: const TextStyle(
+                    fontSize: 48,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    '/ 100',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.white.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '$emoji $_healthStatus',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Last synced: ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
-              style: const TextStyle(fontSize: 12, color: Colors.white54),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: _healthScore / 100,
+                backgroundColor: Colors.white.withValues(alpha: 0.2),
+                valueColor: const AlwaysStoppedAnimation(Colors.white),
+                minHeight: 6,
+              ),
             ),
           ],
         ),
@@ -238,12 +515,72 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
     );
   }
 
+  Widget _buildDataSourceBadge() {
+    IconData icon;
+    String label;
+    Color color;
+
+    switch (_lastSyncSource) {
+      case 'health_connect':
+        icon = Icons.watch_rounded;
+        label = 'Synced via Health Connect';
+        color = const Color(0xFF26A69A);
+        break;
+      case 'sensor':
+        icon = Icons.sensors_rounded;
+        label = 'Using phone sensors';
+        color = const Color(0xFF7C4DFF);
+        break;
+      case 'manual':
+        icon = Icons.edit_rounded;
+        label = 'Manual entry mode';
+        color = const Color(0xFFFFB300);
+        break;
+      default:
+        icon = Icons.info_outline_rounded;
+        label = 'No data source connected';
+        color = const Color(0xFF78909C);
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ),
+          Text(
+            'Last: ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
+            style: TextStyle(
+              fontSize: 11,
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildVitalCard(_VitalData data, int index) {
-    
     // Simple progress normalization
     double progress = 0.5;
     if (data.max > data.min) {
-        progress = ((data.value - data.min) / (data.max - data.min)).clamp(0.0, 1.0);
+      progress = ((data.value - data.min) / (data.max - data.min)).clamp(0.0, 1.0);
     }
 
     return TweenAnimationBuilder<double>(
@@ -280,9 +617,10 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.7),
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.7),
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -310,9 +648,10 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
                     data.unit,
                     style: TextStyle(
                       fontSize: 11,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.5),
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.5),
                     ),
                   ),
                 ),
@@ -366,9 +705,10 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Theme.of(
-                context,
-              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              color: Theme.of(context)
+                  .colorScheme
+                  .surfaceContainerHighest
+                  .withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Row(
@@ -384,9 +724,10 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
                     t['tip'] as String,
                     style: TextStyle(
                       fontSize: 13,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.8),
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.8),
                     ),
                   ),
                 ),

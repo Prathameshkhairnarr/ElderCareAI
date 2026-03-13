@@ -28,6 +28,24 @@ class HealthSummary(BaseModel):
     temperature: Optional[VitalResponse] = None
 
 
+# ── Batch Vitals (unified sync from Health Connect / sensors) ──
+
+class VitalsBatchCreate(BaseModel):
+    """Unified payload for syncing vitals from Health Connect or sensors."""
+    steps: Optional[float] = None
+    heart_rate: Optional[float] = None
+    spo2: Optional[float] = None
+    sleep_hours: Optional[float] = None
+    temperature: Optional[float] = None
+    bp_systolic: Optional[float] = None
+
+
+class HealthScoreResponse(BaseModel):
+    score: int
+    status: str  # Excellent | Good | Fair | Poor
+    breakdown: dict = {}
+
+
 # ── Health Profile (demographic & medical) ────────────
 
 class HealthProfileCreate(BaseModel):
