@@ -67,9 +67,6 @@ Future<void> initializeSmsListener() async {
   PermissionStatus smsPermission;
   try {
     smsPermission = await Permission.sms.status;
-    if (!smsPermission.isGranted) {
-      smsPermission = await Permission.sms.request();
-    }
   } catch (e) {
     AppLogger.error(LogCategory.sms, 'SMS permission check failed: $e');
 
@@ -90,11 +87,11 @@ Future<void> initializeSmsListener() async {
     return;
   }
 
-  // ── STEP 2: Also request phone permission (needed by another_telephony) ──
+  // ── STEP 2: Also check phone permission (needed by another_telephony) ──
   try {
     final phonePermission = await Permission.phone.status;
     if (!phonePermission.isGranted) {
-      await Permission.phone.request();
+       AppLogger.warn(LogCategory.sms, 'Phone permission is not granted.');
     }
   } catch (e) {
     // Non-fatal: phone permission is secondary

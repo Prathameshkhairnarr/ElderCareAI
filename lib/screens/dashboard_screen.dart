@@ -12,7 +12,7 @@ import 'sms_analyzer_screen.dart';
 import 'sos_screen.dart';
 import 'call_protection_screen.dart';
 import 'alerts_history_screen.dart';
-import 'health_profile_view_screen.dart';
+import 'health_monitor_screen.dart';
 import 'guardian_setup_screen.dart';
 import 'ai_doctor_screen.dart';
 
@@ -123,7 +123,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             _buildHomeTab(), // 0: Home
             const AiDoctorScreen(), // 1: AI Doctor
             const SosScreen(), // 2: SOS
-            const HealthProfileViewScreen(), // 3: Health
+            const HealthMonitorScreen(), // 3: Health Live Dashboard
           ],
         ),
         bottomNavigationBar: NavigationBar(

@@ -216,7 +216,7 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
     _selectedBloodGroup = profile.bloodGroup;
   }
 
-  HealthProfile _buildProfileFromForm() {
+   HealthProfile _buildProfileFromForm() {
     // Keep existing immutable fields like name, dateOfBirth, gender
     final current = _profileService.profile;
     return current.copyWith(
@@ -231,6 +231,8 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
           : null,
     );
   }
+
+
 
   // ── Save ───────────────────────────────────────
   Future<void> _saveProfile() async {
@@ -322,7 +324,7 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
     final cs = theme.colorScheme;
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
+      // No floating action button since manual entry is removed
       body: SafeArea(
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())

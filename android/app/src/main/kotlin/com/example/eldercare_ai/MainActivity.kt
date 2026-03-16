@@ -6,11 +6,11 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import android.telephony.SmsManager
 import androidx.annotation.NonNull
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity: FlutterActivity() {
+class MainActivity: FlutterFragmentActivity() {
     private val SMS_CHANNEL = "com.eldercare/sms"
     private val BATTERY_CHANNEL = "eldercare/battery"
 

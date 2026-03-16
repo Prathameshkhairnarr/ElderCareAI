@@ -9,7 +9,7 @@ import '../services/health_profile_service.dart';
 import '../services/risk_score_provider.dart';
 import '../services/system_status_manager.dart';
 import '../services/user_memory_service.dart';
-import '../services/health_sync_service.dart';
+import '../services/health_service.dart';
 import 'action_handler.dart';
 import 'conversation_memory.dart';
 import 'emotion_tagger.dart';
@@ -558,15 +558,22 @@ class AiBrainService {
       // Ignore network errors or timeouts during context building
     }
 
-    // Latest Vitals from HealthSyncService
+    // Latest Vitals from HealthService
     try {
-      final vitals = HealthSyncService().vitals.value;
+      final healthService = HealthService();
       final vParts = <String>[];
-      if (vitals['heart_rate'] != null) vParts.add('HR:${vitals['heart_rate']!.toInt()} bpm');
-      if (vitals['steps'] != null) vParts.add('Steps:${vitals['steps']!.toInt()}');
-      if (vitals['spo2'] != null) vParts.add('SpO2:${vitals['spo2']!.toInt()}%');
-      if (vitals['sleep_hours'] != null) vParts.add('Sleep:${vitals['sleep_hours']!.toStringAsFixed(1)} hrs');
-      if (vitals['temperature'] != null) vParts.add('Temp:${vitals['temperature']!.toStringAsFixed(1)}°F');
+      final steps = await healthService.getStepsToday();
+      final sleep = await healthService.estimateSleep();
+      final spo2 = await healthService.getSpO2();
+      final bp = await healthService.getBloodPressure();
+      final temp = await healthService.getTemperature();
+      
+      if (steps > 0) vParts.add('Steps:$steps');
+      if (spo2 != null) vParts.add('SpO2:${spo2.toInt()}%');
+      if (sleep != null) vParts.add('Sleep:${sleep.toStringAsFixed(1)} hrs');
+      if (temp != null) vParts.add('Temp:${temp.toStringAsFixed(1)}°F');
+      if (bp != null) vParts.add('BP Systolic:${bp.toInt()}');
+
       if (vParts.isNotEmpty) parts.add('Vitals: ${vParts.join(', ')}');
     } catch (_) {}
 

@@ -279,9 +279,8 @@ void onStart(ServiceInstance service) async {
     try {
       final Telephony telephony = Telephony.instance;
 
-      // Request permissions at service start to ensure reliability on real devices
-      final granted = await telephony.requestPhoneAndSmsPermissions;
-      AppLogger.info(LogCategory.sms, 'SMS permission granted: $granted');
+      // We rely on the Main isolate (sms_listener_service) to request permissions.
+      // Requesting them here in the background isolate concurrently causes Android crashes.
 
       telephony.listenIncomingSms(
         onNewMessage: (SmsMessage message) async {

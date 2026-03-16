@@ -10,7 +10,6 @@ import 'services/sms_listener_service.dart';
 import 'services/shake_detector_service.dart';
 import 'services/risk_score_provider.dart';
 import 'services/app_logger.dart';
-import 'services/location_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'app_theme.dart';
 import 'app_routes.dart';
@@ -63,21 +62,41 @@ void main() {
       }
 
       // ─────────────────────────────────────────
-      // 📱 START FOREGROUND SMS LISTENER (after background service)
+      // SAFE ASYNC INITIALIZATION (Sequential logic)
       // ─────────────────────────────────────────
-      try {
-        await initializeSmsListener().timeout(const Duration(seconds: 10));
-      } catch (e) {
-        AppLogger.error(
-          LogCategory.sms,
-          'Foreground SMS Listener Init Failed: $e',
-        );
+      Future<void> _runAsyncInitializations() async {
+        try {
+          // 🚀 BATCH ALL STARTUP PERMISSIONS HERE TO PREVENT ANDROID 14+ CRASHES 🚀
+          // Requesting them via a list allows the plugin to queue the prompts naturally
+          // without triggering multiple simultaneous intents.
+          await [
+            Permission.sms,
+            Permission.phone,
+            Permission.notification,
+            Permission.activityRecognition,
+            Permission.location,
+          ].request();
+        } catch (e) {
+          AppLogger.warn(LogCategory.lifecycle, 'Master permission request error: $e');
+        }
+
+        try {
+          await initializeSmsListener();
+        } catch (e) {
+          AppLogger.error(
+            LogCategory.sms,
+            'Foreground SMS Listener Init Failed: $e',
+          );
+        }
+
+        try {
+          await _initNonCriticalServices();
+        } catch (e) {
+          AppLogger.error(LogCategory.lifecycle, 'Non-critical init failed: $e');
+        }
       }
 
-      // ─────────────────────────────────────────
-      // SAFE PARALLEL INITIALIZATION (non-blocking)
-      // ─────────────────────────────────────────
-      unawaited(_initNonCriticalServices());
+      unawaited(_runAsyncInitializations());
 
       runApp(const ElderCareAppBootstrap());
     },
@@ -114,14 +133,10 @@ Future<void> _initNonCriticalServices() async {
     AppLogger.warn(LogCategory.lifecycle, 'SettingsService Init Failed: $e');
   }
 
-  // Permissions (non-blocking) — SMS permission is handled by initializeSmsListener()
+  // Permissions (non-blocking)
+  // Notifications and location are now handled in the master batch.
   try {
-    final notifStatus = await Permission.notification.request();
-    AppLogger.info(
-      LogCategory.lifecycle,
-      'Notification permission: $notifStatus',
-    );
-
+    // Battery optimization is a special intent, keep it isolated at the end.
     final batteryStatus = await Permission.ignoreBatteryOptimizations.request();
     AppLogger.info(
       LogCategory.lifecycle,
@@ -137,11 +152,6 @@ Future<void> _initNonCriticalServices() async {
     AppLogger.warn(LogCategory.risk, 'RiskScoreProvider Init Failed: $e');
   }
 
-  try {
-    await LocationService.initialize().timeout(const Duration(seconds: 5));
-  } catch (e) {
-    AppLogger.warn(LogCategory.lifecycle, 'LocationService Init Failed: $e');
-  }
 }
 
 /// Lightweight bootstrap so UI starts instantly
