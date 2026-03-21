@@ -489,10 +489,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         title: 'AI Doctor',
         subtitle: 'Voice assistant & health tools',
         color: const Color(0xFF26A69A),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const AiDoctorScreen()),
-        ),
+        onTap: () => setState(() => _selectedNavIndex = 1),
       ),
     ];
 

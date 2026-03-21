@@ -99,6 +99,9 @@ class HealthProfileService extends ChangeNotifier {
 
       // Load active profile data
       await _loadProfile(prefs, _activeProfileId);
+      
+      // Notify UI that initialization is complete and data is ready
+      notifyListeners();
     } catch (e) {
       AppLogger.error(LogCategory.lifecycle, '[HEALTH] Init failed: $e');
     }

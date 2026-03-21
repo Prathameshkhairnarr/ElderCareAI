@@ -3,6 +3,7 @@ import '../models/health_profile.dart';
 import '../services/api_service.dart';
 import '../services/health_profile_service.dart';
 import '../services/app_logger.dart';
+import '../services/google_fit_service.dart';
 
 class MyHealthScreen extends StatefulWidget {
   const MyHealthScreen({super.key});
@@ -33,6 +34,11 @@ class _MyHealthScreenState extends State<MyHealthScreen> {
 
   // Vitals summary
   Map<String, dynamic>? _vitalsSummary;
+  
+  // Google Fit
+  bool _isGoogleFitConnecting = false;
+  bool _isGoogleFitConnected = false;
+  final _googleFitService = GoogleFitService();
 
   @override
   void initState() {
@@ -223,9 +229,38 @@ class _MyHealthScreenState extends State<MyHealthScreen> {
                     // Health score card
                     _buildHealthScoreCard(),
                     const SizedBox(height: 16),
-
-                    // Profile status card (NEW)
+                    
+                    // Warning Banner if not connected
+                    if (!_googleFitService.isConnected)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.red.withValues(alpha: 0.2)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.sync_problem_rounded, color: Colors.redAccent, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Google Fit not connected', style: TextStyle(fontSize: 13, color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                                  Text('Connect in Profile settings to sync vitals', style: TextStyle(fontSize: 11, color: Colors.redAccent.withValues(alpha: 0.8))),
+                                ],
+                              )
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                    // Profile status card
                     _buildProfileStatusCard(),
+
                     const SizedBox(height: 24),
 
                     // Vitals summary
@@ -404,6 +439,83 @@ class _MyHealthScreenState extends State<MyHealthScreen> {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _connectGoogleFit() async {
+    setState(() => _isGoogleFitConnecting = true);
+
+    bool success = await _googleFitService.init();
+
+    if (success) {
+      int steps = await _googleFitService.getStepsToday();
+      double? hr = await _googleFitService.getHeartRate();
+
+      if (steps > 0 || hr != null) {
+        setState(() {
+          _isGoogleFitConnected = true;
+          _vitalsSummary ??= {};
+          if (steps > 0) {
+            _vitalsSummary!['steps'] = {'value': steps};
+          }
+          if (hr != null) {
+            _vitalsSummary!['heart_rate'] = {'value': hr};
+          }
+        });
+        if (mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text('Google Fit synced successfully!'))
+           );
+        }
+      } else {
+        if (mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text('Google Fit data not available'))
+           );
+        }
+      }
+    } else {
+      if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(
+           const SnackBar(content: Text('Google Fit data not available'))
+         );
+      }
+    }
+
+    if (mounted) setState(() => _isGoogleFitConnecting = false);
+  }
+
+  Widget _buildGoogleFitSection() {
+    return _cardWrapper(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.fitness_center_rounded, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 8),
+              const Text('Google Fit Integration', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _isGoogleFitConnecting ? null : _connectGoogleFit,
+              icon: _isGoogleFitConnecting 
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) 
+                  : Icon(_isGoogleFitConnected ? Icons.check_circle_rounded : Icons.sync_rounded),
+              label: Text(_isGoogleFitConnected ? 'Sync Google Fit Data' : 'Connect Google Fit'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
           ),
         ],
       ),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
 import '../services/health_service.dart';
+import '../services/google_fit_service.dart';
 import '../services/app_logger.dart';
 
 class HealthMonitorScreen extends StatefulWidget {
@@ -12,11 +13,14 @@ class HealthMonitorScreen extends StatefulWidget {
   State<HealthMonitorScreen> createState() => _HealthMonitorScreenState();
 }
 
-class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
+class _HealthMonitorScreenState extends State<HealthMonitorScreen> with WidgetsBindingObserver {
   final _api = ApiService();
   final _healthService = HealthService();
+  final _googleFitService = GoogleFitService();
   
   bool _isLoading = true;
+  bool _isGoogleFitConnecting = false;
+  bool _isGoogleFitConnected = false;
 
   Timer? _refreshTimer;
   StreamSubscription<int>? _stepSubscription;
@@ -43,11 +47,23 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initHealthSystem();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (!_isLoading) {
+         // Auto-sync when user comes back to the app
+         _connectGoogleFit();
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
     _stepSubscription?.cancel();
     super.dispose();
@@ -62,33 +78,28 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
     await _healthService.initialize();
     print('DEBUG_HEALTH: _healthService.initialize() done');
 
-    // 1. Subscribe to Live Steps (Phone Sensors)
+    // 1. Subscribe to Live Steps (Phone Sensors) - Fallback ONLY
     print('DEBUG_HEALTH: Subscribing to stepStream()');
     _stepSubscription = _healthService.stepStream().listen((steps) {
       if (!mounted) return;
       setState(() {
-        _currentSteps = steps;
-        _recalculateScore();
+        // ONLY use pedometer if Google Fit is NOT connected
+        if (!_isGoogleFitConnected) {
+           _currentSteps = steps;
+           _recalculateScore();
+        }
       });
     }, onError: (error) {
       print('DEBUG_HEALTH: stepStream error: $error');
       AppLogger.error(LogCategory.lifecycle, 'Step subscription error: $error');
-      if (mounted) {
-        setState(() { 
-           // Maintain last known or default to 0
-           _currentSteps = _currentSteps > 0 ? _currentSteps : 0; 
-        });
-      }
     });
 
-    // 2. Fetch initial static vitals
-    print('DEBUG_HEALTH: Calling _fetchStaticVitals()');
-    await _fetchStaticVitals();
-    print('DEBUG_HEALTH: _fetchStaticVitals() done');
+    // 2. Automatically sync Google Fit / Health Connect in the background
+    await _connectGoogleFit();
 
-    // 3. Start auto-refresh scheduler (5 minutes for static vitals)
-    _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      _fetchStaticVitals();
+    // 3. Start auto-refresh scheduler (1 minute for static vitals)
+    _refreshTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      _connectGoogleFit();
     });
 
     print('DEBUG_HEALTH: Setting _isLoading to false');
@@ -139,6 +150,59 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
     _healthScore = _healthService.calculateHealthScore(_currentSteps, _currentSleep, _currentHR);
   }
 
+  Future<void> _connectGoogleFit() async {
+    if (!mounted) return;
+    setState(() => _isGoogleFitConnecting = true);
+
+    bool success = await _googleFitService.init();
+
+    if (success) {
+      int steps = await _googleFitService.getStepsToday();
+      double? hr = await _googleFitService.getHeartRate();
+      double? spo2 = await _googleFitService.getSpO2();
+      double? bp = await _googleFitService.getBloodPressure();
+      double? temp = await _googleFitService.getTemperature();
+      double? sleep = await _googleFitService.getSleep();
+
+      if (mounted) {
+        setState(() {
+          _isGoogleFitConnected = true;
+          // Direct assignment from Google Fit / Health Connect (Watch priority)
+          if (steps >= 0) _currentSteps = steps;
+          if (hr != null && hr > 0) _currentHR = hr;
+          if (spo2 != null && spo2 > 0) _currentSpO2 = spo2;
+          if (bp != null && bp > 0) _currentBP = bp;
+          if (temp != null && temp > 0) _currentTemp = temp;
+          if (sleep != null && sleep > 0) _currentSleep = sleep;
+          _recalculateScore();
+
+          // ── Cache in singleton so ALL screens read the same data ──
+          _googleFitService.cachedSteps = _currentSteps;
+          _googleFitService.cachedHeartRate = _currentHR;
+          _googleFitService.cachedSleep = _currentSleep;
+          _googleFitService.cachedBloodPressure = _currentBP > 0 ? _currentBP : null;
+          _googleFitService.cachedSpO2 = _currentSpO2 > 0 ? _currentSpO2 : null;
+          _googleFitService.cachedTemperature = _currentTemp > 0 ? _currentTemp : null;
+          _googleFitService.cachedHealthScore = _healthScore;
+        });
+        
+        // Push optionally to backend for sync
+        try {
+           await _api.syncVitalsBatch(
+             steps: _currentSteps.toDouble(),
+             heartRate: _currentHR > 0 ? _currentHR : null,
+             sleepHours: _currentSleep > 0 ? _currentSleep : null,
+             spo2: _currentSpO2 > 0 ? _currentSpO2 : null,
+             bpSystolic: _currentBP > 0 ? _currentBP : null,
+             temperature: _currentTemp > 0 ? _currentTemp : null,
+           );
+        } catch (_) {}
+      }
+    }
+
+    if (mounted) setState(() => _isGoogleFitConnecting = false);
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -168,28 +232,71 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
                 children: [
                   _buildHealthScoreCard(),
                   const SizedBox(height: 16),
-                  
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF7C4DFF).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
+                                    // Live sensor banner — shown ONLY when Google Fit is connected
+                  if (_isGoogleFitConnected && !_isLoading)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF7C4DFF).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.sensors_rounded, color: Color(0xFF7C4DFF), size: 18),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Live sensor tracking active',
+                              style: TextStyle(
+                                  color: Color(0xFF7C4DFF), fontSize: 13, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.sensors_rounded, color: Color(0xFF7C4DFF), size: 18),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: Text('Live sensor tracking active', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF7C4DFF))),
-                        ),
-                        Text('Auto-Sync On', style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5))),
-                      ],
+
+                  // Warning banner — shown ONLY when NOT connected
+                  if (!_isGoogleFitConnected && !_isLoading)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.2)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.sync_problem_rounded, color: Colors.redAccent, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Google Fit not connected', style: TextStyle(fontSize: 13, color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                                Text('Connect in Profile to sync watch vitals', style: TextStyle(fontSize: 11, color: Colors.redAccent.withValues(alpha: 0.8))),
+                              ],
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              _connectGoogleFit();
+                            },
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.redAccent,
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                            child: const Text('Connect', style: TextStyle(fontWeight: FontWeight.bold)),
+                          )
+                        ],
+                      ),
                     ),
-                  ),
                   const SizedBox(height: 24),
 
                   Text('Live Vitals', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSurface)),
+
                   const SizedBox(height: 12),
                   
                   GridView.builder(
@@ -212,7 +319,6 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
   }
 
   Widget _buildHealthScoreCard() {
-    String emoji = _healthScore > 80 ? '✨' : _healthScore > 60 ? '👍' : _healthScore > 40 ? '⚠️' : '🚨';
     String status = _healthScore > 80 ? 'Excellent' : _healthScore > 60 ? 'Good' : _healthScore > 40 ? 'Fair' : 'Low Data';
 
     return Container(
@@ -234,7 +340,7 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20)),
-                child: Text('$emoji $status', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+                child: Text(status, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
               )
             ],
           ),

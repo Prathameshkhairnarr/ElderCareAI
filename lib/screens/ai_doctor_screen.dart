@@ -4,6 +4,8 @@ import '../models/medication.dart';
 import '../services/emergency_service.dart';
 import '../services/api_service.dart';
 import '../services/health_profile_service.dart';
+import '../services/google_fit_service.dart';
+import '../services/health_service.dart';
 import '../widgets/health_profile_card.dart';
 
 // ═══════════════════════════════════════════════════════════════
@@ -680,13 +682,15 @@ class _HealthCheckCard extends StatefulWidget {
 class _HealthCheckCardState extends State<_HealthCheckCard> {
   final _api = ApiService();
   final _profileService = HealthProfileService();
+  final _googleFit = GoogleFitService();
+  final _healthService = HealthService();
 
   bool _loading = true;
 
   // Vitals — default to null (unknown)
   String _heartRate = '--';
   String _bloodPressure = '--';
-  int _healthScore = 85;
+  int _healthScore = 0;
 
   @override
   void initState() {
@@ -695,51 +699,27 @@ class _HealthCheckCardState extends State<_HealthCheckCard> {
   }
 
   Future<void> _loadHealthData() async {
-    try {
-      // Load profile (for health score age-adjustment)
-      final profile = await _profileService.load();
-
-      // Load vitals from API (same call as HealthProfileViewScreen)
-      Map<String, dynamic>? summary;
-      try {
-        summary = await _api.getHealthSummary().timeout(
-          const Duration(seconds: 5),
-        );
-      } catch (_) {
-        // API unavailable — keep defaults
+    // Wait up to 8 seconds for HealthMonitorScreen to populate cache
+    for (int i = 0; i < 4; i++) {
+      final gf = _googleFit;
+      if (gf.cachedHealthScore > 0 || gf.cachedSteps > 0 || gf.cachedHeartRate > 0) {
+        // Cache is populated — use it
+        if (gf.cachedHeartRate > 0) _heartRate = gf.cachedHeartRate.toInt().toString();
+        if (gf.cachedBloodPressure != null) _bloodPressure = gf.cachedBloodPressure!.toInt().toString();
+        _healthScore = gf.cachedHealthScore;
+        if (mounted) setState(() => _loading = false);
+        return;
       }
-
+      await Future.delayed(const Duration(seconds: 2));
       if (!mounted) return;
-
-      // Parse heart rate
-      if (summary != null && summary['heart_rate'] != null) {
-        final hrVal = summary['heart_rate']['value'];
-        if (hrVal != null) _heartRate = '${(hrVal as num).toInt()}';
-      }
-
-      // Parse blood pressure
-      if (summary != null && summary['bp'] != null) {
-        final bpVal = summary['bp']['value'];
-        if (bpVal != null) _bloodPressure = '${(bpVal as num).toInt()}';
-      }
-
-      // Compute health score (same logic as HealthProfileViewScreen)
-      int score = 85;
-      if (summary != null) {
-        if (summary['heart_rate'] == null) score -= 5;
-        if (summary['spo2'] != null && summary['spo2']['value'] < 95) {
-          score -= 10;
-        }
-      }
-      if (!profile.isEmpty && profile.age != null && profile.age! > 65) {
-        score -= 5;
-      }
-      _healthScore = score.clamp(0, 100);
-
-      setState(() => _loading = false);
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
     }
+    
+    // After waiting, show whatever's in cache (may still be 0)
+    final gf = _googleFit;
+    if (gf.cachedHeartRate > 0) _heartRate = gf.cachedHeartRate.toInt().toString();
+    if (gf.cachedBloodPressure != null) _bloodPressure = gf.cachedBloodPressure!.toInt().toString();
+    _healthScore = gf.cachedHealthScore;
+    if (mounted) setState(() => _loading = false);
   }
 
   @override

@@ -5,6 +5,7 @@ import '../models/medication.dart';
 import '../services/api_service.dart';
 import '../services/health_profile_service.dart';
 import '../services/app_logger.dart';
+import '../services/health_service.dart';
 
 /// Unified Health tab — merges Health Monitor vitals + My Health profile
 /// into a single scrollable screen with real-time ChangeNotifier sync.
@@ -23,6 +24,7 @@ class HealthProfileViewScreen extends StatefulWidget {
 class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
   final _api = ApiService();
   final _profileService = HealthProfileService();
+  final _healthService = HealthService();
   final _formKey = GlobalKey<FormState>();
 
   bool _isLoading = true;
@@ -173,9 +175,20 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
             _updateVital('sleep', summary['sleep']);
             _updateVital('temperature', summary['temperature']);
           }
-          if (scoreData != null) {
+          if (scoreData != null && summary == null) {
             _healthScore = scoreData['score'] ?? 80;
             _healthStatus = scoreData['status'] ?? 'Fair';
+          }
+          if (summary != null) {
+            final stps = _vitals['steps']!.value.toInt();
+            final slp = _vitals['sleep']!.value;
+            final hr = _vitals['heart_rate']!.value;
+            _healthScore = _healthService.calculateHealthScore(stps, slp, hr);
+            
+            if (_healthScore > 80) _healthStatus = 'Excellent';
+            else if (_healthScore > 60) _healthStatus = 'Good';
+            else if (_healthScore > 40) _healthStatus = 'Fair';
+            else _healthStatus = 'Low Data';
           }
 
           // Merge API profile if local was empty

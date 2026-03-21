@@ -11,6 +11,7 @@ import '../../widgets/page_transition.dart';
 import '../login_screen.dart';
 import '../health_profile_view_screen.dart';
 import '../settings/contacts_screen.dart';
+import '../../services/google_fit_service.dart';
 
 // ═══════════════════════════════════════════════════════════════
 //  PROFILE SCREEN — Central hub for user profile & app settings
@@ -29,6 +30,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _healthProfile = HealthProfileService();
   final _api = ApiService();
   final _imagePicker = ImagePicker();
+  final _googleFit = GoogleFitService();
 
   String? _profileImagePath;
 
@@ -1150,6 +1152,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 context,
                 MaterialPageRoute(builder: (_) => const ContactsScreen()),
               ),
+            ),
+            _buildActionTile(
+              icon: Icons.fitness_center_rounded,
+              title: 'Google Fit Integration',
+              subtitle: _googleFit.isConnected ? 'Connected & syncing watch data' : 'Tap to connect your watch health data',
+              color: _googleFit.isConnected ? const Color(0xFF26A69A) : const Color(0xFF78909C),
+              cs: cs,
+              onTap: () async {
+                 bool success = await _googleFit.init();
+                 setState(() {});
+                 if (!mounted) return;
+                 ScaffoldMessenger.of(context).showSnackBar(
+                   SnackBar(
+                     content: Text(success ? 'Google Fit connected successfully!' : 'Could not connect to Google Fit'),
+                     backgroundColor: success ? const Color(0xFF26A69A) : Colors.redAccent,
+                   )
+                 );
+              },
             ),
             const SizedBox(height: 24),
 
