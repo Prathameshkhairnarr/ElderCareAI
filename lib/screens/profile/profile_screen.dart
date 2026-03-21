@@ -1192,12 +1192,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _buildToggleTile(
               icon: Icons.record_voice_over_rounded,
               title: 'Voice Alerts',
-              subtitle: 'Read scam warnings aloud',
+              subtitle: 'Read important alerts aloud',
               value: _settings.voiceFeedback,
               color: const Color(0xFFFF7043),
               cs: cs,
               onChanged: (v) => _settings.toggleVoiceFeedback(v),
             ),
+            // Per-category toggles (shown only when master is ON)
+            if (_settings.voiceFeedback) ...[
+              _buildSubToggle(
+                icon: Icons.shield_rounded,
+                title: 'Scam Alerts',
+                value: _settings.voiceAlertScam,
+                color: const Color(0xFFEF5350),
+                cs: cs,
+                onChanged: (v) => _settings.toggleVoiceAlertScam(v),
+              ),
+              _buildSubToggle(
+                icon: Icons.medication_rounded,
+                title: 'Medicine Reminders',
+                value: _settings.voiceAlertMedicine,
+                color: const Color(0xFF66BB6A),
+                cs: cs,
+                onChanged: (v) => _settings.toggleVoiceAlertMedicine(v),
+              ),
+              _buildSubToggle(
+                icon: Icons.favorite_rounded,
+                title: 'Health Alerts',
+                value: _settings.voiceAlertHealth,
+                color: const Color(0xFFEC407A),
+                cs: cs,
+                onChanged: (v) => _settings.toggleVoiceAlertHealth(v),
+              ),
+              _buildSubToggle(
+                icon: Icons.sos_rounded,
+                title: 'SOS Alerts',
+                value: _settings.voiceAlertSos,
+                color: const Color(0xFFFF5722),
+                cs: cs,
+                onChanged: (v) => _settings.toggleVoiceAlertSos(v),
+              ),
+              _buildSubToggle(
+                icon: Icons.call_rounded,
+                title: 'Call Warnings',
+                value: _settings.voiceAlertCallWarning,
+                color: const Color(0xFF5C6BC0),
+                cs: cs,
+                onChanged: (v) => _settings.toggleVoiceAlertCallWarning(v),
+              ),
+            ],
             _buildToggleTile(
               icon: Icons.vibration_rounded,
               title: 'Shake to SOS',
@@ -1583,7 +1626,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Expanded(
                   child: Padding(
                     padding: EdgeInsets.only(
-                      right: mode != ThemeMode.system ? 8 : 0,
+                      right: mode != ThemeMode.dark ? 8 : 0,
                     ),
                     child: _buildThemeOption(mode, cs),
                   ),
@@ -1867,4 +1910,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
   }
+
+  Widget _buildSubToggle({
+    required IconData icon,
+    required String title,
+    required bool value,
+    required Color color,
+    required ColorScheme cs,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 24, bottom: 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Switch.adaptive(
+              value: value,
+              onChanged: onChanged,
+              activeTrackColor: color,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
+

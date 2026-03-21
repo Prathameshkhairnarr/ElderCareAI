@@ -24,7 +24,6 @@ class _MyHealthScreenState extends State<MyHealthScreen> {
   final _heightController = TextEditingController();
   final _weightController = TextEditingController();
   final _conditionsController = TextEditingController();
-  final _emergencyContactController = TextEditingController();
 
   String? _selectedGender;
   String? _selectedBloodGroup;
@@ -47,7 +46,6 @@ class _MyHealthScreenState extends State<MyHealthScreen> {
     _heightController.dispose();
     _weightController.dispose();
     _conditionsController.dispose();
-    _emergencyContactController.dispose();
     super.dispose();
   }
 
@@ -57,7 +55,6 @@ class _MyHealthScreenState extends State<MyHealthScreen> {
     _heightController.text = profile.heightCm?.toString() ?? '';
     _weightController.text = profile.weightKg?.toString() ?? '';
     _conditionsController.text = profile.medicalConditions ?? '';
-    _emergencyContactController.text = profile.emergencyPhone ?? '';
     _selectedGender = profile.gender;
     _selectedBloodGroup = profile.bloodGroup;
   }
@@ -125,9 +122,6 @@ class _MyHealthScreenState extends State<MyHealthScreen> {
       weightKg: double.tryParse(_weightController.text),
       medicalConditions: _conditionsController.text.isNotEmpty
           ? _conditionsController.text
-          : null,
-      emergencyPhone: _emergencyContactController.text.isNotEmpty
-          ? _emergencyContactController.text
           : null,
     );
   }
@@ -258,12 +252,6 @@ class _MyHealthScreenState extends State<MyHealthScreen> {
                     _sectionTitle('Medical Conditions'),
                     const SizedBox(height: 12),
                     _buildMedicalConditionsSection(),
-                    const SizedBox(height: 24),
-
-                    // Emergency Contact section
-                    _sectionTitle('Emergency Contact'),
-                    const SizedBox(height: 12),
-                    _buildEmergencyContactSection(),
                     const SizedBox(height: 32),
 
                     // Save button
@@ -787,24 +775,7 @@ class _MyHealthScreenState extends State<MyHealthScreen> {
     );
   }
 
-  Widget _buildEmergencyContactSection() {
-    return _cardWrapper(
-      child: TextFormField(
-        controller: _emergencyContactController,
-        keyboardType: TextInputType.phone,
-        style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
-        decoration: _inputDecoration(
-          label: 'Emergency Contact Phone',
-          icon: Icons.emergency_rounded,
-        ),
-        validator: (v) {
-          if (v != null && v.isNotEmpty && v.length < 10)
-            return 'Enter valid phone';
-          return null;
-        },
-      ),
-    );
-  }
+
 
   Widget _cardWrapper({required Widget child}) {
     return Container(

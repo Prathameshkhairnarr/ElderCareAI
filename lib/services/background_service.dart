@@ -13,6 +13,7 @@ import 'risk_score_engine.dart';
 import 'risk_score_provider.dart';
 import 'alert_policy.dart';
 import 'app_logger.dart';
+import 'voice_alert_service.dart';
 
 // NOTE: initializeBackgroundService() stub removed.
 // The actual background init is initECAIBackground() at the bottom of this file.
@@ -119,6 +120,17 @@ Future<void> processSms(String body, String sender) async {
           classification.explanation,
           true,
         );
+
+        // ── Voice Alert for scam ──
+        try {
+          VoiceAlertService().speakAlert(
+            'Warning! Yeh message scam ho sakta hai. $sender se aaya hai. '
+            'Kripya is message ka jawab na de.',
+            priority: AlertPriority.high,
+            category: AlertCategory.scam,
+          );
+        } catch (_) {}
+
         AppLogger.info(
           LogCategory.sms,
           'Alert fired for ${classification.scamType}',

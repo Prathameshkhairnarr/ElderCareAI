@@ -15,6 +15,10 @@ import 'app_theme.dart';
 import 'app_routes.dart';
 import 'dart:async';
 
+import 'screens/login_screen.dart';
+import 'screens/dashboard_screen.dart';
+import 'screens/guardian_dashboard_screen.dart';
+
 void main() {
   runZonedGuarded(
     () async {
@@ -96,9 +100,24 @@ void main() {
         }
       }
 
+      // Ensure Auth Service is initialized before checking route
+      try {
+        await AuthService().init().timeout(const Duration(seconds: 5));
+      } catch (e) {
+        AppLogger.error(LogCategory.auth, 'AuthService Init Failed: $e');
+      }
+
       unawaited(_runAsyncInitializations());
 
-      runApp(const ElderCareAppBootstrap());
+      final auth = AuthService();
+      Widget homeWidget = const LoginScreen();
+      if (auth.isLoggedIn && auth.currentUser != null) {
+        homeWidget = auth.currentUser!.role == UserRole.guardian
+            ? const GuardianDashboardScreen()
+            : const DashboardScreen();
+      }
+
+      runApp(ElderCareApp(homeWidget: homeWidget));
     },
     (error, stack) {
       // Last-resort handler: catches errors that escape all other handlers
@@ -109,12 +128,6 @@ void main() {
 
 /// Runs heavy inits without blocking app start
 Future<void> _initNonCriticalServices() async {
-  try {
-    await AuthService().init().timeout(const Duration(seconds: 5));
-  } catch (e) {
-    AppLogger.error(LogCategory.auth, 'AuthService Init Failed: $e');
-  }
-
   try {
     await EmergencyService().init().timeout(const Duration(seconds: 5));
   } catch (e) {
@@ -154,44 +167,11 @@ Future<void> _initNonCriticalServices() async {
 
 }
 
-/// Lightweight bootstrap so UI starts instantly
-class ElderCareAppBootstrap extends StatefulWidget {
-  const ElderCareAppBootstrap({super.key});
 
-  @override
-  State<ElderCareAppBootstrap> createState() => _ElderCareAppBootstrapState();
-}
-
-class _ElderCareAppBootstrapState extends State<ElderCareAppBootstrap> {
-  String _startRoute = AppRoutes.login;
-
-  @override
-  void initState() {
-    super.initState();
-    _resolveRoute();
-  }
-
-  Future<void> _resolveRoute() async {
-    final auth = AuthService();
-
-    if (auth.isLoggedIn && auth.currentUser != null) {
-      _startRoute = auth.currentUser!.role == UserRole.guardian
-          ? AppRoutes.guardianDashboard
-          : AppRoutes.dashboard;
-    }
-
-    if (mounted) setState(() {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ElderCareApp(initialRoute: _startRoute);
-  }
-}
 
 class ElderCareApp extends StatelessWidget {
-  final String initialRoute;
-  const ElderCareApp({super.key, required this.initialRoute});
+  final Widget homeWidget;
+  const ElderCareApp({super.key, required this.homeWidget});
 
   @override
   Widget build(BuildContext context) {
@@ -204,7 +184,7 @@ class ElderCareApp extends StatelessWidget {
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
           themeMode: SettingsService().themeMode,
-          initialRoute: initialRoute,
+          home: homeWidget,
           onGenerateRoute: AppRoutes.generateRoute,
           builder: (context, child) {
             final scale = SettingsService().fontScale;

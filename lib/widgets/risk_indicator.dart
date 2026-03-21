@@ -42,9 +42,10 @@ class RiskIndicator extends StatelessWidget {
                 painter: _RiskArcPainter(
                   progress: value / 100,
                   color: color,
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHighest,
+                  backgroundColor: Color.alphaBlend(
+                    Colors.grey.withValues(alpha: 0.25),
+                    Theme.of(context).colorScheme.surfaceContainerHighest,
+                  ),
                 ),
               ),
               Column(

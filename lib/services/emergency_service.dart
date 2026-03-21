@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import 'api_service.dart';
 import 'app_logger.dart';
+import 'voice_alert_service.dart';
 
 class EmergencyContact {
   final String id;
@@ -306,6 +307,15 @@ class EmergencyService extends ChangeNotifier {
         LogCategory.sos,
         'SOS Result: $result | Backend: $backendOk',
       );
+
+      // ── Voice Alert for SOS confirmation ──
+      try {
+        VoiceAlertService().speakAlert(
+          'SOS message bhej diya gaya hai. Aapke emergency contacts ko alert kar diya gaya hai.',
+          priority: AlertPriority.high,
+          category: AlertCategory.sos,
+        );
+      } catch (_) {}
     } catch (e) {
       _lastStatus = "❌ Failed: $e";
       AppLogger.error(LogCategory.sos, 'SOS Error: $e');

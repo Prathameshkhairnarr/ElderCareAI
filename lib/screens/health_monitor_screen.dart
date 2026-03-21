@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:heart_bpm/heart_bpm.dart';
 
 import '../services/api_service.dart';
 import '../services/health_service.dart';
@@ -140,54 +139,13 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
     _healthScore = _healthService.calculateHealthScore(_currentSteps, _currentSleep, _currentHR);
   }
 
-  void _measureHeartRate() {
-    int currentBPM = 0;
-    
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Measure Heart Rate'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-               const Text('Gently place your finger entirely over the rear camera lens and flash.', textAlign: TextAlign.center),
-               const SizedBox(height: 20),
-               HeartBPMDialog(
-                  context: context,
-                  showTextValues: true,
-                  borderRadius: 10,
-                  onRawData: (value) {},
-                  onBPM: (value) => setState(() {
-                    currentBPM = value;
-                  }),
-               ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                if (currentBPM > 40 && currentBPM < 200) {
-                  setState(() {
-                    _currentHR = currentBPM.toDouble();
-                    _recalculateScore();
-                  });
-                }
-              },
-              child: const Text('Save & Close'),
-            ),
-          ],
-        );
-      },
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
     // Sync local state map to UI definitions
     _vitalsCache['steps']!.value = _currentSteps.toDouble();
     _vitalsCache['heart_rate']!.value = _currentHR;
+
     _vitalsCache['sleep']!.value = _currentSleep;
     _vitalsCache['spo2']!.value = _currentSpO2;
     _vitalsCache['bp']!.value = _currentBP;
@@ -198,20 +156,9 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> {
         title: const Text('Live Health Tracking'),
         centerTitle: true,
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.favorite_rounded, color: Colors.red),
-            onPressed: _measureHeartRate,
-            tooltip: 'Measure Heart Rate',
-          )
-        ],
+
       ),
-      floatingActionButton: FloatingActionButton.extended(
-         backgroundColor: const Color(0xFFEF5350),
-         icon: const Icon(Icons.camera_rounded, color: Colors.white),
-         label: const Text('Measure Heart Rate', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-         onPressed: _measureHeartRate,
-      ),
+
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(

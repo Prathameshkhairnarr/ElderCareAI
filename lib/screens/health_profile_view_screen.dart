@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+
 import '../models/health_profile.dart';
 import '../models/medication.dart';
 import '../services/api_service.dart';
@@ -34,7 +34,6 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
   final _heightController = TextEditingController();
   final _weightController = TextEditingController();
   final _conditionsController = TextEditingController();
-  final _emergencyContactController = TextEditingController();
   String? _selectedBloodGroup;
 
   final _genders = ['male', 'female', 'other'];
@@ -130,7 +129,6 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
     _heightController.dispose();
     _weightController.dispose();
     _conditionsController.dispose();
-    _emergencyContactController.dispose();
     super.dispose();
   }
 
@@ -212,7 +210,6 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
     _heightController.text = profile.heightCm?.toString() ?? '';
     _weightController.text = profile.weightKg?.toString() ?? '';
     _conditionsController.text = profile.medicalConditions ?? '';
-    _emergencyContactController.text = profile.emergencyPhone ?? '';
     _selectedBloodGroup = profile.bloodGroup;
   }
 
@@ -225,9 +222,6 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
       weightKg: double.tryParse(_weightController.text),
       medicalConditions: _conditionsController.text.isNotEmpty
           ? _conditionsController.text
-          : null,
-      emergencyPhone: _emergencyContactController.text.isNotEmpty
-          ? _emergencyContactController.text
           : null,
     );
   }
@@ -304,16 +298,7 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
     if (mounted) setState(() => _isSaving = false);
   }
 
-  Future<void> _makeCall(String phone) async {
-    try {
-      final uri = Uri(scheme: 'tel', path: phone);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-      }
-    } catch (e) {
-      AppLogger.error(LogCategory.lifecycle, '[HEALTH] Call launch error: $e');
-    }
-  }
+
 
   // ═══════════════════════════════════════════════
   //  BUILD
@@ -404,11 +389,6 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
                           _sectionTitle('Active Medications', cs),
                           const SizedBox(height: 12),
                           _buildMedicationsSection(cs),
-                          const SizedBox(height: 20),
-
-                          _sectionTitle('Emergency Contact', cs),
-                          const SizedBox(height: 12),
-                          _buildEmergencyContactSection(cs),
                           const SizedBox(height: 28),
 
                           // Save button
@@ -1085,48 +1065,7 @@ class _HealthProfileViewScreenState extends State<HealthProfileViewScreen> {
     );
   }
 
-  // ── Emergency Contact Section ─────────────────
-  Widget _buildEmergencyContactSection(ColorScheme cs) {
-    return _cardWrapper(
-      cs,
-      child: Row(
-        children: [
-          Expanded(
-            child: TextFormField(
-              controller: _emergencyContactController,
-              keyboardType: TextInputType.phone,
-              style: TextStyle(color: cs.onSurface),
-              decoration: _inputDecoration(
-                label: 'Emergency Contact Phone',
-                icon: Icons.emergency_rounded,
-                cs: cs,
-              ),
-              validator: (v) {
-                if (v != null && v.isNotEmpty && v.length < 10) {
-                  return 'Enter valid phone';
-                }
-                return null;
-              },
-            ),
-          ),
-          if (_emergencyContactController.text.length >= 10) ...[
-            const SizedBox(width: 10),
-            Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF26A69A).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: IconButton(
-                onPressed: () => _makeCall(_emergencyContactController.text),
-                icon: const Icon(Icons.call_rounded, color: Color(0xFF26A69A)),
-                tooltip: 'Call Emergency',
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
+
 
   // ── Shared Helpers ────────────────────────────
   Widget _cardWrapper(ColorScheme cs, {required Widget child}) {

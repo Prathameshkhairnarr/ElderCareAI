@@ -270,15 +270,7 @@ class _HealthProfileCardState extends State<HealthProfileCard> {
         ),
         const SizedBox(height: 12),
 
-        // Row 6 — Emergency Contact
-        _infoTile(
-          icon: Icons.phone_rounded,
-          label: 'Emergency',
-          value: profile.emergencyPhone ?? '—',
-          color: const Color(0xFFEC407A),
-          cs: cs,
-          fullWidth: true,
-        ),
+
 
         // Last updated
         if (profile.lastUpdated != null) ...[
