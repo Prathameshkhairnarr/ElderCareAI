@@ -34,9 +34,14 @@ class HealthService {
     // Permissions are requested lazily right before the streams/functions need them.
   }
 
-  Future<bool> _ensureHealthPermissions() async {
+  bool _isAuthenticating = false;
+
+  Future<bool> _ensureHealthPermissions({bool requestAuth = false}) async {
     if (!_healthConnectAvailable) return false;
-    if (_healthPermissionsRequested) return true;
+    if (_healthPermissionsRequested && !requestAuth) return true;
+    
+    if (_isAuthenticating) return false;
+    _isAuthenticating = true;
 
     final types = [
       HealthDataType.STEPS,
@@ -53,12 +58,18 @@ class HealthService {
         return true;
       }
 
-      bool granted = await _health.requestAuthorization(types);
-      _healthPermissionsRequested = true;
-      return granted;
+      if (requestAuth) {
+        bool granted = await _health.requestAuthorization(types);
+        _healthPermissionsRequested = true;
+        return granted;
+      }
+      
+      return false; // Silently fail if we aren't explicitly requesting auth
     } catch (e) {
       AppLogger.warn(LogCategory.lifecycle, 'Health authorization error: $e');
       return false;
+    } finally {
+      _isAuthenticating = false;
     }
   }
 

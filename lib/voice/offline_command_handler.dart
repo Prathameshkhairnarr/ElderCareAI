@@ -1,25 +1,19 @@
 import 'package:flutter/services.dart';
+import 'dart:convert';
 import '../services/app_logger.dart';
 import 'language_detector.dart';
 
 /// Offline command result — returned when a local command is matched.
 class OfflineResult {
-  final String spokenResponse;
-  final String? navigateTo; // route name if navigation needed
+  final String? spokenResponse;
+  final String? navigateTo; 
+  final String? actionJson; // For layer 3 & 4 direct actions
 
-  const OfflineResult({required this.spokenResponse, this.navigateTo});
+  const OfflineResult({this.spokenResponse, this.navigateTo, this.actionJson});
 }
 
-/// Handles basic commands locally without network access.
-///
-/// Supported commands:
-///   - Time: "samay", "time", "kitne baje"
-///   - Date: "tarikh", "date", "aaj", "din"
-///   - Battery: "battery", "charge"
-///   - Open health: "health profile", "sehat", "health dikhao"
-///   - Open medications: "dawai", "medication", "medicine dikhao"
-///
-/// Returns null if no offline command matched → pipeline continues to AI.
+/// Strict Priority-Based Routing Engine for Voice OS.
+/// Bypasses AI instantly if confidence is high for known offline actions.
 class OfflineCommandHandler {
   OfflineCommandHandler._();
   static final OfflineCommandHandler instance = OfflineCommandHandler._();
@@ -36,119 +30,94 @@ class OfflineCommandHandler {
     final text = input.toLowerCase().trim();
     final isHindi = language != DetectedLanguage.english;
 
-    // ── Time ──
+    // ── Layer 2: Time, Date, Battery (Instant Response) ──
     if (_matchesTime(text)) {
       return OfflineResult(spokenResponse: _getTimeResponse(isHindi));
     }
 
-    // ── Date ──
     if (_matchesDate(text)) {
       return OfflineResult(spokenResponse: _getDateResponse(isHindi));
     }
 
-    // ── Battery ──
     if (_matchesBattery(text)) {
       final response = await _getBatteryResponse(isHindi);
       return OfflineResult(spokenResponse: response);
     }
 
-    // ── Open health profile ──
-    if (_matchesHealthProfile(text)) {
+    // ── Layer 3: App Command & Navigation ──
+    if (_matchesDarkMode(text)) {
       return OfflineResult(
-        spokenResponse: isHindi
-            ? 'Health profile khol rahi hoon.'
-            : 'Opening health profile.',
+        spokenResponse: isHindi ? 'Dark mode on kar rahi hoon.' : 'Enabling dark mode.',
+        actionJson: jsonEncode({"action": "change_theme", "value": "dark"})
+      );
+    }
+
+    if (RegExp(r'(health profile|health dikhao|sehat dikhao|open health|स्वास्थ्य प्रोफाइल|सेहत दिखाओ)', caseSensitive: false).hasMatch(text)) {
+      return OfflineResult(
+        spokenResponse: isHindi ? 'Health profile khol rahi hoon.' : 'Opening health profile.',
+        actionJson: jsonEncode({"action": "navigate", "value": "health_profile"}),
         navigateTo: '/health-profile-view',
       );
     }
 
-    // ── Open medications ──
-    if (_matchesMedication(text)) {
+    if (RegExp(r'(medication|medicine dikhao|dawai dikhao|open medicine|दवा|दवाइयां|मेडिसिन दिखाओ)', caseSensitive: false).hasMatch(text)) {
       return OfflineResult(
-        spokenResponse: isHindi
-            ? 'Dawai ka section khol rahi hoon.'
-            : 'Opening medication section.',
+        spokenResponse: isHindi ? 'Dawai ka list khol rahi hoon.' : 'Opening medication list.',
+        actionJson: jsonEncode({"action": "navigate", "value": "medication"}),
         navigateTo: '/ai-doctor',
       );
     }
 
-    return null; // no match
+    // ── Layer 4: Health Data Update (Extracting details locally) ──
+    final weightMatch = RegExp(r'(weight|wazan)[\s:]*(\d{2,3})', caseSensitive: false).firstMatch(text);
+    if (weightMatch != null) {
+      final weightVal = weightMatch.group(2)!;
+      return OfflineResult(
+        spokenResponse: isHindi ? 'Aapka wazan $weightVal kilo save kar liya gaya hai.' : 'Your weight of $weightVal kg has been saved.',
+        actionJson: jsonEncode({"action": "update_health_profile", "field": "weight", "value": weightVal})
+      );
+    }
+
+    final sugarMatch = RegExp(r'(sugar|sugar level)[\s:]*(\d{2,3})', caseSensitive: false).firstMatch(text);
+    if (sugarMatch != null) {
+      final sugarVal = sugarMatch.group(2)!;
+      return OfflineResult(
+        spokenResponse: isHindi ? 'Aapka sugar level $sugarVal record kar liya.' : 'Your sugar level of $sugarVal has been recorded.',
+        actionJson: jsonEncode({"action": "update_health_profile", "field": "sugar_level", "value": sugarVal})
+      );
+    }
+
+    // Layer 5 Fallthrough -> Null -> Goes to Azure AI
+    return null;
   }
 
   // ══════════════════════════════════════════════
-  //  MATCHERS
+  //  FUZZY / REGEX MATCHERS
   // ══════════════════════════════════════════════
 
   bool _matchesTime(String text) {
-    const keywords = [
-      'time',
-      'samay',
-      'kitne baje',
-      'kya time',
-      'waqt',
-      'baj rahe',
-      'baje hain',
-      'abhi kya',
-      'kitna baja',
-    ];
-    return keywords.any((k) => text.contains(k));
+    // Removed \b because Dart word boundaries do not work with Devanagari Unicode
+    final reg = RegExp(r'(time|tym|samay|waqt|kitne baje|kitne bje|kya time|kitna baja|kis time|टाइम|समय|कितने बजे|वक़्त|बज रहे)', caseSensitive: false);
+    return reg.hasMatch(text);
   }
 
   bool _matchesDate(String text) {
-    const keywords = [
-      'date',
-      'tarikh',
-      'aaj kya',
-      'aaj ka din',
-      'din kya',
-      'today',
-      'kaunsa din',
-      'kaun sa din',
-    ];
-    return keywords.any((k) => text.contains(k));
+    final reg = RegExp(r'(date|tarikh|tareek|aaj kya|aaj ka din|din kya|today|kaunsa din|kaun sa din|aj date|डेट|तारीख|आज|दिन क्या|कौन सा दिन)', caseSensitive: false);
+    return reg.hasMatch(text);
   }
 
   bool _matchesBattery(String text) {
-    const keywords = [
-      'battery',
-      'charge',
-      'kitna charge',
-      'battery level',
-      'battery status',
-      'phone charge',
-    ];
-    return keywords.any((k) => text.contains(k));
+    final reg = RegExp(r'(battery|batery|charge|charg|kitna charge|phone charge|बैटरी|चार्ज|फ़ोन चार्ज)', caseSensitive: false);
+    return reg.hasMatch(text);
   }
 
-  bool _matchesHealthProfile(String text) {
-    const keywords = [
-      'health profile',
-      'health dikhao',
-      'sehat dikhao',
-      'mera health',
-      'health open',
-      'open health',
-      'health batao',
-    ];
-    return keywords.any((k) => text.contains(k));
-  }
-
-  bool _matchesMedication(String text) {
-    const keywords = [
-      'medication',
-      'medicine dikhao',
-      'dawai dikhao',
-      'dawai ka',
-      'medicines open',
-      'open medicine',
-      'goli dikhao',
-      'reminder dikhao',
-    ];
-    return keywords.any((k) => text.contains(k));
+  bool _matchesDarkMode(String text) {
+    final reg = RegExp(r'(dark mode|theme dark|theme change|black theme|kala theme|डार्क मोड|थीम बदलें|काला थीम)', caseSensitive: false);
+    return reg.hasMatch(text);
   }
 
   // ══════════════════════════════════════════════
-  //  RESPONSE BUILDERS
+  //  RESPONSE BUILDERS (Direct & Non-Conversational)
   // ══════════════════════════════════════════════
 
   String _getTimeResponse(bool hindi) {
@@ -163,56 +132,32 @@ class OfflineCommandHandler {
     final h12 = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
 
     if (hindi) {
-      return 'Abhi $h12 bajke $minute minute hue hain, $period.';
+      return 'Ji, abhi $h12 bajke $minute minute hue hain, $period.';
     } else {
-      return "It's $h12:$minute $period.";
+      return "Sure, it is currently $h12:$minute $period.";
     }
   }
 
   String _getDateResponse(bool hindi) {
     final now = DateTime.now();
     const hindiDays = [
-      'Somvar',
-      'Mangalvar',
-      'Budhvar',
-      'Guruvar',
-      'Shukravar',
-      'Shanivar',
-      'Ravivar',
+      'Somvar', 'Mangalvar', 'Budhvar', 'Guruvar', 'Shukravar', 'Shanivar', 'Ravivar'
     ];
     const englishDays = [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday',
+      'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
     ];
     const hindiMonths = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
+      'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+      'September', 'October', 'November', 'December'
     ];
 
-    final day = hindi
-        ? hindiDays[now.weekday - 1]
-        : englishDays[now.weekday - 1];
+    final day = hindi ? hindiDays[now.weekday - 1] : englishDays[now.weekday - 1];
     final month = hindiMonths[now.month - 1];
 
     if (hindi) {
-      return 'Aaj $day hai, ${now.day} $month ${now.year}.';
+      return 'Ji, aaj $day hai, ${now.day} $month ${now.year}.';
     } else {
-      return "Today is $day, $month ${now.day}, ${now.year}.";
+      return "Yes, today is $day, $month ${now.day}, ${now.year}.";
     }
   }
 
@@ -221,23 +166,19 @@ class OfflineCommandHandler {
       final level = await _batteryChannel.invokeMethod<int>('getBatteryLevel');
       if (level != null) {
         if (hindi) {
-          return 'Aapke phone ki battery $level percent hai.';
+          return 'Ji, aapke phone ki battery $level percent hai.';
         } else {
           return 'Your phone battery is at $level percent.';
         }
       }
     } catch (e) {
-      AppLogger.warn(
-        LogCategory.lifecycle,
-        '[OFFLINE] Battery check failed: $e',
-      );
+      AppLogger.warn(LogCategory.lifecycle, '[OFFLINE] Battery check failed: $e');
     }
 
-    // Fallback if battery channel not available
     if (hindi) {
-      return 'Battery level check nahi ho paya. Settings mein dekh sakte hain.';
+      return 'Ji, battery check nahi ho paya.';
     } else {
-      return 'Could not check battery level. Please check in settings.';
+      return 'Could not check battery level at this moment.';
     }
   }
 }

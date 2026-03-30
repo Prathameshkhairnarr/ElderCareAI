@@ -12,8 +12,13 @@ class SpeechService {
   bool get isListening => _isListening;
   bool get isAvailable => _isAvailable;
 
+  bool _isInitializing = false;
+
   /// Initialize speech engine. Returns true if mic is available & permitted.
   Future<bool> initialize() async {
+    if (_isInitializing) return _isAvailable;
+    _isInitializing = true;
+    
     try {
       _isAvailable = await _speech.initialize(
         onError: (error) {
@@ -39,6 +44,8 @@ class SpeechService {
       AppLogger.error(LogCategory.lifecycle, '[VOICE] STT init failed: $e');
       _isAvailable = false;
       return false;
+    } finally {
+      _isInitializing = false;
     }
   }
 

@@ -1,8 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:health/health.dart';
 import 'package:pedometer/pedometer.dart';
 import 'app_logger.dart';
 
-class GoogleFitService {
+class GoogleFitService extends ChangeNotifier {
   // Singleton
   GoogleFitService._privateConstructor();
   static final GoogleFitService _instance = GoogleFitService._privateConstructor();
@@ -21,29 +22,66 @@ class GoogleFitService {
   double? cachedTemperature;
   int cachedHealthScore = 0;
 
-  bool get isConnected => _healthConnectAvailable;
-
-  Future<bool> init() async {
-    AppLogger.info(LogCategory.lifecycle, '[GOOGLE FIT] Initializing real data connection...');
-    if (_authRequested && _healthConnectAvailable) {
-       // Already checked permissions this session, safe to proceed
-       return true;
-    }
-    return await _initFallback();
+  /// Call this after updating cached values to notify all listening screens
+  void notifyCacheUpdated() {
+    notifyListeners();
   }
 
-  Future<bool> _initFallback() async {
+  bool get isConnected => _healthConnectAvailable;
+
+  bool _isAuthenticating = false;
+
+  /// Silently initializes. Does NOT show permission popup if not already granted.
+  /// Ideal for background or app-start initialization.
+  Future<bool> init() async {
+    AppLogger.info(LogCategory.lifecycle, '[GOOGLE FIT] Silent initialization...');
+    if (_authRequested && _healthConnectAvailable) {
+       return true;
+    }
+    return await _initFallback(requestAuth: false);
+  }
+
+  /// Explicitly requests authorization. Will show the permission popup.
+  /// Ideal for "Connect" buttons in the UI.
+  Future<bool> requestPermissions() async {
+    if (_isAuthenticating) {
+      AppLogger.warn(LogCategory.lifecycle, '[GOOGLE FIT] Already authenticating. Ignoring extra click.');
+      return false;
+    }
+    AppLogger.info(LogCategory.lifecycle, '[GOOGLE FIT] Explicitly requesting permissions...');
+    return await _initFallback(requestAuth: true);
+  }
+
+  Future<bool> _initFallback({required bool requestAuth}) async {
+    if (_isAuthenticating) return false;
+    _isAuthenticating = true;
+    
     AppLogger.info(LogCategory.lifecycle, '[GOOGLE FIT] Connecting to Health Connect / Sensors...');
     try {
       try {
-        _authRequested = true;
-        _healthConnectAvailable = await Health().requestAuthorization([
+        final types = [
           HealthDataType.STEPS,
           HealthDataType.HEART_RATE,
-        ]);
-        if (_healthConnectAvailable) {
-          AppLogger.info(LogCategory.lifecycle, '[GOOGLE FIT] Health Connect active');
-          return true;
+          HealthDataType.SLEEP_ASLEEP,
+          HealthDataType.BLOOD_OXYGEN,
+          HealthDataType.BLOOD_PRESSURE_SYSTOLIC,
+          HealthDataType.BODY_TEMPERATURE,
+        ];
+        
+        bool? hasPermissions;
+        try {
+          hasPermissions = await Health().hasPermissions(types);
+        } catch (_) {}
+
+        if (hasPermissions == true || requestAuth) {
+          _authRequested = true;
+          _healthConnectAvailable = await Health().requestAuthorization(types);
+          if (_healthConnectAvailable) {
+            AppLogger.info(LogCategory.lifecycle, '[GOOGLE FIT] Health Connect active');
+            return true;
+          }
+        } else {
+          AppLogger.info(LogCategory.lifecycle, '[GOOGLE FIT] Health Connect permissions not granted yet. Skipping silent request.');
         }
       } catch (e) {
         AppLogger.warn(LogCategory.lifecycle, '[GOOGLE FIT] Health Connect failed: $e');
@@ -59,6 +97,8 @@ class GoogleFitService {
     } catch (e) {
       AppLogger.error(LogCategory.lifecycle, '[GOOGLE FIT] All connections failed: $e');
       return false;
+    } finally {
+      _isAuthenticating = false;
     }
   }
 

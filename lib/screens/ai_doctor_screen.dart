@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import '../voice/voice_controller.dart';
+import '../voice/medical_response_parser.dart';
 import '../models/medication.dart';
 import '../services/emergency_service.dart';
 import '../services/api_service.dart';
-import '../services/health_profile_service.dart';
 import '../services/google_fit_service.dart';
-import '../services/health_service.dart';
 import '../widgets/health_profile_card.dart';
 
 // ═══════════════════════════════════════════════════════════════
@@ -23,15 +22,30 @@ class AiDoctorScreen extends StatefulWidget {
 class _AiDoctorScreenState extends State<AiDoctorScreen> {
   final VoiceController _voice = VoiceController();
 
+  /// Parsed medical response shown in the inline card (null = no card).
+  MedicalResponse? _lastMedicalResponse;
+
   @override
   void initState() {
     super.initState();
+    _voice.addListener(_onVoiceUpdate);
   }
 
   @override
   void dispose() {
+    _voice.removeListener(_onVoiceUpdate);
     _voice.dispose();
     super.dispose();
+  }
+
+  void _onVoiceUpdate() {
+    // Parse response whenever voice controller returns a new text response
+    if (_voice.response.isNotEmpty && _voice.isIdle) {
+      final parsed = MedicalResponseParser.parse(_voice.response);
+      if (parsed != null && mounted) {
+        setState(() => _lastMedicalResponse = parsed);
+      }
+    }
   }
 
   @override
@@ -47,7 +61,7 @@ class _AiDoctorScreenState extends State<AiDoctorScreen> {
               size: 24,
             ),
             const SizedBox(width: 10),
-            const Text('AI Doctor'),
+            const Text('AI Doctor — Didi'),
           ],
         ),
         centerTitle: true,
@@ -59,14 +73,49 @@ class _AiDoctorScreenState extends State<AiDoctorScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // ── Voice Assistant ──
             _VoiceAssistantCard(controller: _voice),
             const SizedBox(height: 20),
+
+            // ── Structured Medical Response Card (appears after AI reply) ──
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              transitionBuilder: (child, animation) => SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, -0.2),
+                  end: Offset.zero,
+                ).animate(CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                )),
+                child: FadeTransition(opacity: animation, child: child),
+              ),
+              child: _lastMedicalResponse != null
+                  ? Padding(
+                      key: ValueKey(_lastMedicalResponse.hashCode),
+                      padding: const EdgeInsets.only(bottom: 20),
+                      child: _MedicalResponseCard(
+                        response: _lastMedicalResponse!,
+                        onDismiss: () =>
+                            setState(() => _lastMedicalResponse = null),
+                      ),
+                    )
+                  : const SizedBox.shrink(key: ValueKey('empty')),
+            ),
+
+            // ── Health Profile Summary ──
             const HealthProfileCard(),
             const SizedBox(height: 20),
+
+            // ── Active Medications ──
             const _MedicationReminderCard(),
             const SizedBox(height: 20),
+
+            // ── Live Health Metrics ──
             const _HealthCheckCard(),
             const SizedBox(height: 28),
+
+            // ── Emergency SOS ──
             _SosEmergencyButton(
               onPressed: () => EmergencyService().triggerSOS(),
             ),
@@ -79,7 +128,232 @@ class _AiDoctorScreenState extends State<AiDoctorScreen> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  1. VOICE ASSISTANT CARD
+//  1. STRUCTURED MEDICAL RESPONSE CARD
+// ═══════════════════════════════════════════════════════════════
+
+class _MedicalResponseCard extends StatelessWidget {
+  final MedicalResponse response;
+  final VoidCallback onDismiss;
+
+  const _MedicalResponseCard({
+    required this.response,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!response.hasContent) return const SizedBox.shrink();
+
+    final cs = Theme.of(context).colorScheme;
+
+    return Stack(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: response.isEmergency 
+                  ? const Color(0xFFEF5350).withOpacity(0.4) 
+                  : cs.primary.withOpacity(0.2),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: (response.isEmergency ? const Color(0xFFEF5350) : cs.primary)
+                    .withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Header ──
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: (response.isEmergency ? const Color(0xFFEF5350) : cs.primary)
+                          .withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      response.isEmergency ? Icons.warning_rounded : Icons.health_and_safety_rounded,
+                      color: response.isEmergency ? const Color(0xFFEF5350) : cs.primary,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Doctor Didi says',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: cs.onSurface.withOpacity(0.7),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // ── Body ──
+              if (response.condition.isNotEmpty) ...[
+                _buildSectionLabel(context, 'POSSIBLE CONDITION', Icons.search_rounded),
+                const SizedBox(height: 6),
+                Text(
+                  response.condition,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: cs.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              if (response.explanation.isNotEmpty) ...[
+                _buildSectionLabel(context, 'EXPLANATION', Icons.info_outline_rounded),
+                const SizedBox(height: 6),
+                Text(
+                  response.explanation,
+                  style: TextStyle(
+                    fontSize: 15,
+                    height: 1.4,
+                    color: cs.onSurface.withOpacity(0.9),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              if (response.symptoms.isNotEmpty) ...[
+                _buildSectionLabel(context, 'MATCHING SYMPTOMS', Icons.list_alt_rounded),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: response.symptoms.map((symptom) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: cs.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: cs.outline.withOpacity(0.2)),
+                      ),
+                      child: Text(
+                        symptom,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: cs.onSurface.withOpacity(0.8),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              if (response.care.isNotEmpty) ...[
+                _buildSectionLabel(context, 'SUGGESTED CARE', Icons.healing_rounded),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  ),
+                  child: Text(
+                    response.care,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.green.shade700,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              if (response.doctorWarning.isNotEmpty) ...[
+                _buildSectionLabel(
+                  context, 
+                  'DOCTOR WARNING', 
+                  Icons.warning_amber_rounded,
+                  color: response.isEmergency ? const Color(0xFFEF5350) : Colors.orange.shade700,
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: (response.isEmergency ? const Color(0xFFEF5350) : Colors.orange).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: (response.isEmergency ? const Color(0xFFEF5350) : Colors.orange).withOpacity(0.3)
+                    ),
+                  ),
+                  child: Text(
+                    response.doctorWarning,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: response.isEmergency ? const Color(0xFFE53935) : Colors.orange.shade800,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+
+        // ── Close Button ──
+        Positioned(
+          top: 8,
+          right: 8,
+          child: IconButton(
+            icon: const Icon(Icons.close_rounded, size: 20),
+            color: cs.onSurface.withOpacity(0.5),
+            style: IconButton.styleFrom(
+              backgroundColor: cs.surface.withOpacity(0.5),
+            ),
+            onPressed: onDismiss,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSectionLabel(BuildContext context, String title, IconData icon, {Color? color}) {
+    final cs = Theme.of(context).colorScheme;
+    final finalColor = color ?? cs.onSurface.withOpacity(0.5);
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: finalColor),
+        const SizedBox(width: 6),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.2,
+            color: finalColor,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  2. VOICE ASSISTANT CARD
 // ═══════════════════════════════════════════════════════════════
 
 class _VoiceAssistantCard extends StatefulWidget {
@@ -680,71 +954,58 @@ class _HealthCheckCard extends StatefulWidget {
 }
 
 class _HealthCheckCardState extends State<_HealthCheckCard> {
-  final _api = ApiService();
-  final _profileService = HealthProfileService();
   final _googleFit = GoogleFitService();
-  final _healthService = HealthService();
-
-  bool _loading = true;
-
-  // Vitals — default to null (unknown)
-  String _heartRate = '--';
-  String _bloodPressure = '--';
-  int _healthScore = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadHealthData();
+    _googleFit.addListener(_onCacheUpdated);
   }
 
-  Future<void> _loadHealthData() async {
-    // Wait up to 8 seconds for HealthMonitorScreen to populate cache
-    for (int i = 0; i < 4; i++) {
-      final gf = _googleFit;
-      if (gf.cachedHealthScore > 0 || gf.cachedSteps > 0 || gf.cachedHeartRate > 0) {
-        // Cache is populated — use it
-        if (gf.cachedHeartRate > 0) _heartRate = gf.cachedHeartRate.toInt().toString();
-        if (gf.cachedBloodPressure != null) _bloodPressure = gf.cachedBloodPressure!.toInt().toString();
-        _healthScore = gf.cachedHealthScore;
-        if (mounted) setState(() => _loading = false);
-        return;
-      }
-      await Future.delayed(const Duration(seconds: 2));
-      if (!mounted) return;
-    }
-    
-    // After waiting, show whatever's in cache (may still be 0)
-    final gf = _googleFit;
-    if (gf.cachedHeartRate > 0) _heartRate = gf.cachedHeartRate.toInt().toString();
-    if (gf.cachedBloodPressure != null) _bloodPressure = gf.cachedBloodPressure!.toInt().toString();
-    _healthScore = gf.cachedHealthScore;
-    if (mounted) setState(() => _loading = false);
+  @override
+  void dispose() {
+    _googleFit.removeListener(_onCacheUpdated);
+    super.dispose();
+  }
+
+  void _onCacheUpdated() {
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
+    // ONLY read from GoogleFitService cache — single source of truth
+    // HealthMonitorScreen is the ONLY writer to this cache
+    // This widget auto-rebuilds when cache changes via ChangeNotifier
+    final heartRate = _googleFit.cachedHeartRate > 0 
+        ? _googleFit.cachedHeartRate.toInt().toString() 
+        : '--';
+    final bloodPressure = _googleFit.cachedBloodPressure != null 
+        ? _googleFit.cachedBloodPressure!.toInt().toString() 
+        : '--';
+    final healthScore = _googleFit.cachedHealthScore;
+
     final metrics = [
       _HealthMetric(
         icon: Icons.favorite_rounded,
         label: 'Heart Rate',
-        value: _heartRate,
+        value: heartRate,
         unit: 'BPM',
         color: const Color(0xFFEF5350),
       ),
       _HealthMetric(
         icon: Icons.monitor_heart_rounded,
         label: 'Blood Pressure',
-        value: _bloodPressure,
+        value: bloodPressure,
         unit: 'mmHg',
         color: const Color(0xFF42A5F5),
       ),
       _HealthMetric(
         icon: Icons.health_and_safety_rounded,
         label: 'Health Score',
-        value: '$_healthScore',
+        value: '$healthScore',
         unit: '%',
         color: const Color(0xFF66BB6A),
       ),
@@ -810,19 +1071,8 @@ class _HealthCheckCardState extends State<_HealthCheckCard> {
             ),
             const SizedBox(height: 20),
 
-            // Metric tiles
-            _loading
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
-                      child: SizedBox(
-                        width: 28,
-                        height: 28,
-                        child: CircularProgressIndicator(strokeWidth: 2.5),
-                      ),
-                    ),
-                  )
-                : Row(
+            // Metric tiles — read directly from cache, no loading state
+            Row(
                     children: metrics
                         .map((m) => Expanded(child: _buildMetricTile(m, cs)))
                         .toList(),

@@ -87,6 +87,10 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> with WidgetsB
         if (!_isGoogleFitConnected) {
            _currentSteps = steps;
            _recalculateScore();
+           // Update cache so ALL screens see the latest score
+           _googleFitService.cachedSteps = _currentSteps;
+           _googleFitService.cachedHealthScore = _healthScore;
+           _googleFitService.notifyCacheUpdated();
         }
       });
     }, onError: (error) {
@@ -184,6 +188,7 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> with WidgetsB
           _googleFitService.cachedSpO2 = _currentSpO2 > 0 ? _currentSpO2 : null;
           _googleFitService.cachedTemperature = _currentTemp > 0 ? _currentTemp : null;
           _googleFitService.cachedHealthScore = _healthScore;
+          _googleFitService.notifyCacheUpdated();
         });
         
         // Push optionally to backend for sync
@@ -268,20 +273,26 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> with WidgetsB
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.sync_problem_rounded, color: Colors.redAccent, size: 20),
+                          const Icon(Icons.sensors_off_rounded, color: Colors.redAccent, size: 20),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('Google Fit not connected', style: TextStyle(fontSize: 13, color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                                Text('Connect in Profile to sync watch vitals', style: TextStyle(fontSize: 11, color: Colors.redAccent.withValues(alpha: 0.8))),
+                                const Text('Live sensor tracking is offline', style: TextStyle(fontSize: 13, color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                                Text('Please connect Google Fit to sync vitals', style: TextStyle(fontSize: 11, color: Colors.redAccent.withValues(alpha: 0.8))),
                               ],
                             ),
                           ),
                           TextButton(
-                            onPressed: () {
-                              _connectGoogleFit();
+                            onPressed: () async {
+                              setState(() => _isGoogleFitConnecting = true);
+                              bool success = await _googleFitService.requestPermissions();
+                              if (success) {
+                                await _connectGoogleFit();
+                              } else {
+                                setState(() => _isGoogleFitConnecting = false);
+                              }
                             },
                             style: TextButton.styleFrom(
                               foregroundColor: Colors.redAccent,

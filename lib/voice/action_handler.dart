@@ -171,6 +171,14 @@ class ActionHandler {
 
     try {
       switch (action.action) {
+        case 'offline':
+          return ActionResult(
+            success: true,
+            spokenResponse: hindi
+                ? 'Main abhi aapke phone ka system data access nahi kar pa rahi. Aap screen par check kar sakte hain.'
+                : 'I cannot access your phone\'s system data right now. Please check your screen.',
+          );
+
         case 'change_theme':
           return await _changeTheme(action.value as String?, hindi);
 

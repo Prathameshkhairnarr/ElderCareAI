@@ -34,7 +34,6 @@ dependencies:
   flutter_dotenv: ^5.1.0
   connectivity_plus: ^7.0.0
   heart_bpm: ^2.0.0+0
-  google_fit: ^0.0.0
 
 dev_dependencies:
   flutter_test:

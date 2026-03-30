@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import '../services/health_profile_service.dart';
 import '../services/risk_score_provider.dart';
 import '../widgets/dashboard_card.dart';
 import '../widgets/risk_indicator.dart';
@@ -68,7 +69,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
       await _riskProvider.refresh();
     } catch (_) {}
 
-    // 3. Load profile image
+    // 3. Load health profile from API → merge into local storage
+    //    So HealthProfileCard on AI Doctor shows data immediately after login
+    try {
+      final apiProfile = await _api.getHealthProfile().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => null,
+      );
+      if (apiProfile != null) {
+        await HealthProfileService().mergeFromApi(apiProfile);
+      }
+    } catch (_) {}
+
+    // 4. Load profile image
     try {
       final prefs = await SharedPreferences.getInstance();
       String? userPhone = _auth.currentUser?.phone;

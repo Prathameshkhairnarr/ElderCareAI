@@ -21,11 +21,15 @@ class TtsTextCleaner {
   /// Clean text for Azure SSML embedding.
   ///
   /// Returns a list of short sentences ready to be inserted into SSML.
-  /// Each sentence is XML-safe, emoji-free, and abbreviation-expanded.
+  /// Each sentence is XML-safe, emoji-free, abbreviation-expanded,
+  /// and stripped of AI Doctor section labels for natural speech.
   static List<String> cleanForAzure(String text) {
     if (text.trim().isEmpty) return [];
 
     var result = text;
+
+    // 0. Strip medical section labels (Condition:, Symptoms:, etc.)
+    result = stripMedicalLabels(result);
 
     // 1. Remove emojis
     result = _removeEmojis(result);
@@ -52,12 +56,54 @@ class TtsTextCleaner {
         .toList();
   }
 
-  /// Clean text lightly for Azure — only emoji removal + XML escape.
+  /// Clean text lightly for Azure — strips medical labels, removes emojis, XML-escapes.
   /// Use when text is already natural (e.g., AI-generated responses).
   static String lightClean(String text) {
-    var clean = _removeEmojis(text);
+    var clean = stripMedicalLabels(text);
+    clean = _removeEmojis(clean);
     clean = clean.replaceAll(RegExp(r'\s+'), ' ').trim();
     return _escapeXml(clean);
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  MEDICAL LABEL STRIPPING
+  // ══════════════════════════════════════════════════════
+
+  /// Strip AI Doctor 5-section labels from text before TTS speech.
+  ///
+  /// Converts: "Condition: viral infection\nExplanation: yeh ek..."
+  /// Into:     "viral infection. yeh ek..."
+  ///
+  /// This makes TTS sound natural even when AI returns labeled format.
+  static String stripMedicalLabels(String text) {
+    var result = text;
+
+    // Strip all known section labels (with colon + optional whitespace)
+    const labelPatterns = [
+      r'Condition\s*:\s*',
+      r'Explanation\s*:\s*',
+      r'Symptoms?\s*:\s*',
+      r'Care\s*:\s*',
+      r'Doctor\s*Warning\s*:\s*',
+    ];
+
+    for (final pattern in labelPatterns) {
+      result = result.replaceAll(RegExp(pattern, caseSensitive: false), '');
+    }
+
+    // Replace newlines (section dividers) with period + space for natural flow
+    result = result.replaceAll(RegExp(r'\n+'), '. ');
+
+    // Strip leading bullet symbols from symptom lists → ", " for spoken list
+    result = result.replaceAll(RegExp(r'\s*-\s+'), ', ');
+    result = result.replaceAll(RegExp(r'\s*•\s+'), ', ');
+
+    // Clean up any resulting double punctuation or orphaned commas
+    result = result.replaceAll(RegExp(r'\.\s*\.'), '.');
+    result = result.replaceAll(RegExp(r'^[,\s]+'), '');
+    result = result.replaceAll(RegExp(r'\s{2,}'), ' ');
+
+    return result.trim();
   }
 
   // ══════════════════════════════════════════════════════

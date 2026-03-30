@@ -534,18 +534,9 @@ class _MyHealthScreenState extends State<MyHealthScreen> {
   }
 
   Widget _buildHealthScoreCard() {
-    int healthScore = 85;
-    if (_vitalsSummary != null) {
-      if (_vitalsSummary!['heart_rate'] == null) healthScore -= 5;
-      if (_vitalsSummary!['spo2'] != null &&
-          _vitalsSummary!['spo2']['value'] < 95) {
-        healthScore -= 10;
-      }
-    }
-    if (_ageController.text.isNotEmpty) {
-      final age = int.tryParse(_ageController.text);
-      if (age != null && age > 65) healthScore -= 5;
-    }
+    // ONLY read from GoogleFitService cache — single source of truth
+    // HealthMonitorScreen is the ONLY writer to this cache
+    final healthScore = GoogleFitService().cachedHealthScore;
 
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),

@@ -330,16 +330,35 @@ class VoiceController extends ChangeNotifier {
         detected,
       );
       if (offlineResult != null) {
-        _response = offlineResult.spokenResponse;
+        if (offlineResult.spokenResponse != null) {
+          _response = offlineResult.spokenResponse!;
+        }
+
+        if (offlineResult.actionJson != null) {
+          AppLogger.info(LogCategory.lifecycle, '[VOICE] Offline JSON action detected');
+          final action = ActionHandler.parseAction(offlineResult.actionJson!);
+          if (action != null) {
+             final isHindi = detected != DetectedLanguage.english;
+             await ActionHandler.instance.execute(
+               action,
+               hindi: isHindi,
+             );
+          }
+        }
+
         AppLogger.info(
           LogCategory.lifecycle,
-          '[VOICE] Offline command: "$_response"',
+          '[VOICE] Offline command processed: "$_response"',
         );
+
         // Handle navigation if offline command requests it
         if (offlineResult.navigateTo != null && onNavigate != null) {
           onNavigate!(offlineResult.navigateTo!);
         }
-        await _speakResponse(_response, ttsLocale);
+
+        if (_response.isNotEmpty) {
+          await _speakResponse(_response, ttsLocale);
+        }
         return;
       }
     } catch (e) {
