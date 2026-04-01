@@ -8,6 +8,7 @@ import 'language_detector.dart';
 import 'conversation_memory.dart';
 import 'offline_command_handler.dart';
 import 'emergency_detector.dart';
+import 'wake_word_service.dart';
 import '../services/app_logger.dart';
 import '../services/user_memory_service.dart';
 import '../services/emergency_service.dart';
@@ -26,6 +27,7 @@ class VoiceController extends ChangeNotifier {
   final SpeechService _stt = SpeechService();
   final VoiceEngine _voiceEngine = VoiceEngine();
   final AiBrainService _ai = AiBrainService.instance;
+  final WakeWordService _wakeWord = WakeWordService.instance;
 
   VoiceState _state = VoiceState.idle;
   String _transcript = '';
@@ -39,6 +41,19 @@ class VoiceController extends ChangeNotifier {
   // ── Continuous conversation mode ──
   bool _isConversationActive = false;
   static const _relistenDelay = Duration(milliseconds: 600);
+
+  // ── Stop keywords — user says these to stop Veda mid-speech ──
+  static const _stopKeywords = [
+    'stop', 'ruk', 'ruko', 'ruk jao', 'bas', 'chup',
+    'band karo', 'band kar', 'shut up', 'quiet', 'enough',
+    'bas karo', 'theek hai', 'ok stop',
+  ];
+
+  // ── Wake word phrases to strip from input ──
+  static const _wakeWordPrefixes = [
+    'hey veda', 'hello veda', 'hi veda', 'ok veda',
+    'veda ji', 'veda sahab', 'veda',
+  ];
 
   // ── Emergency detection state ──
   bool _awaitingEmergencyConfirmation = false;
@@ -108,7 +123,7 @@ class VoiceController extends ChangeNotifier {
     if (!ready) return;
 
     const greeting =
-        'Namaste, main aapki AI Doctor hoon. Aap apni samasya bata sakte hain.';
+        'Namaste! Main Didi hoon, aapki AI Doctor. Agar tabiyat mein koi takleef ho toh bataiye.';
     _response = greeting;
     _setState(VoiceState.speaking);
 
@@ -136,18 +151,25 @@ class VoiceController extends ChangeNotifier {
       switch (_state) {
         case VoiceState.idle:
         case VoiceState.error:
+          _pauseWakeWord();
           await _startListening();
           break;
         case VoiceState.listening:
           await _stopListening();
           break;
         case VoiceState.speaking:
-          // Tapping during speech stops TTS AND ends conversation mode
+          // Tapping during speech stops TTS
           _isConversationActive = false;
           await _stopSpeaking();
           break;
         case VoiceState.processing:
-          // ignore taps during processing
+          // Allow cancellation during processing — force reset
+          AppLogger.info(LogCategory.lifecycle, '[VOICE] Tap during processing — force reset');
+          _processingInProgress = false;
+          _isConversationActive = false;
+          await _stt.cancel();
+          await _voiceEngine.stop();
+          _setState(VoiceState.idle);
           break;
       }
     } finally {
@@ -203,13 +225,13 @@ class VoiceController extends ChangeNotifier {
         notifyListeners();
       },
       onTimeout: () {
-        // ── Graceful timeout: speak friendly retry message ──
+        // ── Graceful timeout: doctor-like retry message ──
         AppLogger.info(
           LogCategory.lifecycle,
           '[VOICE] Timeout — speaking retry prompt',
         );
         _transcript = '';
-        _response = "Mujhe awaaz clear nahi mili, dobara boliyega.";
+        _response = "Aapki awaaz clear nahi aa payi. Zara dobara boliye, main sun rahi hoon.";
         _speakResponse(_response, 'hi-IN');
       },
       localeId: sttLocale,
@@ -243,6 +265,26 @@ class VoiceController extends ChangeNotifier {
       // Speak friendly retry instead of showing error
       _response = "Mujhe awaaz clear nahi mili, dobara boliyega.";
       _speakResponse(_response, 'hi-IN');
+      return;
+    }
+
+    // ── Check for stop commands — user wants Veda to stop ──
+    final lowerText = text.toLowerCase().trim();
+    if (_isStopCommand(lowerText)) {
+      AppLogger.info(LogCategory.lifecycle, '[VOICE] Stop command detected: "$text"');
+      _isConversationActive = false;
+      await _voiceEngine.stop();
+      _response = '';
+      _setState(VoiceState.idle);
+      _resumeWakeWord();
+      return;
+    }
+
+    // ── Strip wake word prefix ("hey veda mujhe bukhar hai" → "mujhe bukhar hai") ──
+    text = _stripWakeWordPrefix(text);
+    if (text.isEmpty) {
+      // User only said the wake word — just start listening for the real query
+      await _startListening();
       return;
     }
 
@@ -456,13 +498,86 @@ class VoiceController extends ChangeNotifier {
       }
     } else {
       _setState(VoiceState.idle);
+      _resumeWakeWord();
     }
   }
 
   Future<void> _stopSpeaking() async {
     await _voiceEngine.stop();
     _isConversationActive = false;
+    _processingInProgress = false;
     _setState(VoiceState.idle);
+    _resumeWakeWord();
+  }
+
+  /// Force reset — unstick the controller from any stuck state.
+  /// Does NOT resume wake word — caller must handle that separately.
+  void forceReset() {
+    AppLogger.warn(LogCategory.lifecycle, '[VOICE] Force reset triggered');
+    _busy = false;
+    _processingInProgress = false;
+    _isConversationActive = false;
+    _stt.cancel();
+    _voiceEngine.stop();
+    _wakeWord.stop();
+    _setState(VoiceState.idle);
+  }
+
+  // ══════════════════════════════════════════════
+  //  STOP COMMAND DETECTION
+  // ══════════════════════════════════════════════
+
+  bool _isStopCommand(String text) {
+    for (final keyword in _stopKeywords) {
+      if (text == keyword || text.startsWith('$keyword ') || text.endsWith(' $keyword')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Strip wake word prefix from transcript.
+  String _stripWakeWordPrefix(String text) {
+    final lower = text.toLowerCase().trim();
+    for (final prefix in _wakeWordPrefixes) {
+      if (lower.startsWith(prefix)) {
+        final stripped = text.substring(prefix.length).trim();
+        if (stripped.isNotEmpty) {
+          AppLogger.info(LogCategory.lifecycle, '[VOICE] Stripped wake word: "$prefix" → "$stripped"');
+        }
+        return stripped;
+      }
+    }
+    return text;
+  }
+
+  // ══════════════════════════════════════════════
+  //  WAKE WORD INTEGRATION
+  // ══════════════════════════════════════════════
+
+  /// Start wake word detection. Call from the AI Doctor screen.
+  Future<void> startWakeWordDetection() async {
+    _wakeWord.onWakeWordDetected = () {
+      AppLogger.info(LogCategory.lifecycle, '[VOICE] Wake word detected — starting listener');
+      _startListening();
+    };
+    await _wakeWord.start();
+  }
+
+  /// Stop wake word detection.
+  void stopWakeWordDetection() {
+    _wakeWord.stop();
+  }
+
+  void _pauseWakeWord() {
+    _wakeWord.stop();
+  }
+
+  void _resumeWakeWord() {
+    // Only resume if not in conversation mode
+    if (!_isConversationActive) {
+      _wakeWord.resume();
+    }
   }
 
   // ── State helpers ──

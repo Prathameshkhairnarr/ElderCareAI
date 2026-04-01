@@ -4,14 +4,11 @@ import '../services/app_logger.dart';
 
 /// Wake word detection service using speech_to_text for offline keyword spotting.
 ///
-/// Listens for the wake phrase "Hey Doctor" or "Doctor sahab" to activate
+/// Listens for "Hey Veda" or similar phrases to activate
 /// the voice assistant without touching the phone.
 ///
-/// Implementation: Uses STT in continuous low-power mode, checking for
-/// wake word in partial results. When detected, triggers the callback.
-///
-/// Note: For production, consider dedicated wake word engines like Porcupine.
-/// This implementation uses speech_to_text as a lightweight alternative.
+/// Uses a periodic watchdog timer to guarantee STT restarts
+/// even if callbacks fail silently.
 class WakeWordService {
   WakeWordService._();
   static final WakeWordService instance = WakeWordService._();
@@ -26,17 +23,24 @@ class WakeWordService {
 
   /// Wake phrases to listen for (case-insensitive).
   static const _wakePhrases = [
-    'hey doctor',
-    'doctor sahab',
-    'hello doctor',
-    'ok doctor',
-    'hi doctor',
-    'doctor ji',
+    'hey veda',
+    'veda sahab',
+    'hello veda',
+    'ok veda',
+    'hi veda',
+    'veda ji',
+    'hey wada',   // common STT mishearing
+    'hey vada',   // common STT mishearing
+    'a veda',     // partial match
   ];
 
   /// Cooldown to prevent rapid re-triggers.
   DateTime _lastTrigger = DateTime(2000);
   static const _triggerCooldown = Duration(seconds: 5);
+
+  /// Watchdog timer — restarts STT if it dies silently.
+  Timer? _watchdogTimer;
+  static const _watchdogInterval = Duration(seconds: 35);
 
   /// Whether wake word detection is active.
   bool get isActive => _isActive;
@@ -93,14 +97,35 @@ class WakeWordService {
 
     _isActive = true;
     await _startListening();
+    _startWatchdog();
     AppLogger.info(LogCategory.lifecycle, '[WAKE] Wake word detection STARTED');
   }
 
-  /// Stop wake word detection.
+  /// Stop wake word detection completely.
   void stop() {
     _isActive = false;
     _stopListening();
+    _stopWatchdog();
     AppLogger.info(LogCategory.lifecycle, '[WAKE] Wake word detection STOPPED');
+  }
+
+  /// Start the watchdog timer that ensures STT keeps restarting.
+  void _startWatchdog() {
+    _stopWatchdog();
+    _watchdogTimer = Timer.periodic(_watchdogInterval, (_) {
+      if (_isActive && !_isListening) {
+        AppLogger.info(
+          LogCategory.lifecycle,
+          '[WAKE] Watchdog: STT died silently — restarting',
+        );
+        _startListening();
+      }
+    });
+  }
+
+  void _stopWatchdog() {
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
   }
 
   Future<void> _startListening() async {
@@ -127,6 +152,7 @@ class WakeWordService {
                 // Stop listening and trigger callback
                 _stopListening();
                 _isActive = false; // pause wake word while assistant is active
+                _stopWatchdog();
                 onWakeWordDetected?.call();
               }
               break;
@@ -140,11 +166,15 @@ class WakeWordService {
           cancelOnError: false,
           listenMode: stt.ListenMode.search, // shorter utterances
         ),
-        localeId: 'en_IN', // English for better "hey doctor" detection
+        localeId: 'en_IN', // English for better "hey veda" detection
       );
     } catch (e) {
       _isListening = false;
       AppLogger.error(LogCategory.lifecycle, '[WAKE] Listen failed: $e');
+      // Retry after delay
+      if (_isActive) {
+        Future.delayed(const Duration(seconds: 3), () => _startListening());
+      }
     }
   }
 
@@ -160,6 +190,8 @@ class WakeWordService {
     if (!_isActive) {
       _isActive = true;
       _startListening();
+      _startWatchdog();
+      AppLogger.info(LogCategory.lifecycle, '[WAKE] Wake word detection RESUMED');
     }
   }
 

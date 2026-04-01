@@ -134,7 +134,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           index: _selectedNavIndex,
           children: [
             _buildHomeTab(), // 0: Home
-            const AiDoctorScreen(), // 1: AI Doctor
+            AiDoctorScreen(isVisible: _selectedNavIndex == 1), // 1: AI Doctor
             const SosScreen(), // 2: SOS
             const HealthMonitorScreen(), // 3: Health Live Dashboard
           ],

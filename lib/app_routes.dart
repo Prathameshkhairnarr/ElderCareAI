@@ -30,7 +30,7 @@ class AppRoutes {
       case sos:
         return PageTransition(page: const SosScreen());
       case aiDoctor:
-        return PageTransition(page: const AiDoctorScreen());
+        return PageTransition(page: const AiDoctorScreen(isVisible: true));
       case healthProfileView:
         return PageTransition(page: const HealthProfileViewScreen());
       default:

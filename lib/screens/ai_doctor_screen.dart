@@ -13,13 +13,15 @@ import '../widgets/health_profile_card.dart';
 // ═══════════════════════════════════════════════════════════════
 
 class AiDoctorScreen extends StatefulWidget {
-  const AiDoctorScreen({super.key});
+  final bool isVisible;
+  const AiDoctorScreen({super.key, this.isVisible = true});
 
   @override
   State<AiDoctorScreen> createState() => _AiDoctorScreenState();
 }
 
-class _AiDoctorScreenState extends State<AiDoctorScreen> {
+class _AiDoctorScreenState extends State<AiDoctorScreen>
+    with WidgetsBindingObserver {
   final VoiceController _voice = VoiceController();
 
   /// Parsed medical response shown in the inline card (null = no card).
@@ -28,11 +30,49 @@ class _AiDoctorScreenState extends State<AiDoctorScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _voice.addListener(_onVoiceUpdate);
+    // Start wake word only if tab is currently visible
+    if (widget.isVisible) {
+      _voice.startWakeWordDetection();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant AiDoctorScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isVisible != widget.isVisible) {
+      if (widget.isVisible) {
+        // Tab became visible — restart wake word
+        _voice.startWakeWordDetection();
+      } else {
+        // Tab became hidden — force stop EVERYTHING
+        _voice.stopWakeWordDetection();
+        _voice.forceReset();
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.inactive) {
+      // App going to background or being killed — stop EVERYTHING instantly
+      _voice.stopWakeWordDetection();
+      _voice.forceReset();
+    } else if (state == AppLifecycleState.resumed && widget.isVisible) {
+      // App came back and AI Doctor tab is visible — restart wake word
+      _voice.startWakeWordDetection();
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _voice.stopWakeWordDetection();
+    _voice.forceReset();
     _voice.removeListener(_onVoiceUpdate);
     _voice.dispose();
     super.dispose();
@@ -61,7 +101,7 @@ class _AiDoctorScreenState extends State<AiDoctorScreen> {
               size: 24,
             ),
             const SizedBox(width: 10),
-            const Text('AI Doctor — Didi'),
+            const Text('AI Doctor — Veda'),
           ],
         ),
         centerTitle: true,
@@ -190,7 +230,7 @@ class _MedicalResponseCard extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Doctor Didi says',
+                      'Doctor Veda says',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -632,8 +672,9 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
                           : statusColor,
                       elevation: 4,
                       child: InkWell(
-                        onTap: _vc.isProcessing ? null : _onMicTap,
-                        onLongPress: _vc.isProcessing ? null : _onMicLongPress,
+                        onTap: _onMicTap,
+                        onLongPress: _onMicLongPress,
+                        onDoubleTap: () => _vc.forceReset(),
                         customBorder: const CircleBorder(),
                         splashColor: Colors.white24,
                         child: SizedBox(

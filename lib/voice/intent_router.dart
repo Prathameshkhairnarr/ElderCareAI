@@ -278,8 +278,8 @@ class IntentRouter {
     switch (intent) {
       case 'greeting':
         return hi
-            ? "Namaste, main aapki ElderCare sahayak hoon, batayiye kaise madad karoon?"
-            : "Hello, I'm your ElderCare assistant, how can I help you?";
+            ? "Namaste! Main Didi hoon, aapki AI Doctor. Agar koi tabiyat ki pareshani ho toh bataiye."
+            : "Hello! I'm Didi, your AI Doctor. Tell me if you have any health concerns.";
 
       case 'health_score':
         return _getHealthResponse(hi);
@@ -308,13 +308,13 @@ class IntentRouter {
 
       case 'thanks':
         return hi
-            ? "Koi baat nahi! Main hamesha aapki seva mein hoon."
-            : "You're welcome! I'm always here to help.";
+            ? "Dhanyawad! Apna khayal rakhiye, aur koi bhi samasya ho toh turant batayiye."
+            : "You're welcome! Take care, and don't hesitate to reach out if anything comes up.";
 
       case 'casual':
         return hi
-            ? "Main bilkul theek hoon! Aapki seva mein hamesha tayyar. Batayiye kaise madad karoon?"
-            : "I'm doing great, thank you! Always ready to help. What can I do for you?";
+            ? "Main theek hoon, shukriya! Aapki tabiyat kaisi hai? Koi takleef ho toh bataiye."
+            : "I'm doing well, thank you! How are you feeling? Let me know if anything is bothering you.";
 
       case 'medicine':
         return await _getMedicineResponse(hi);
@@ -333,22 +333,23 @@ class IntentRouter {
   int _fallbackIndex = 0;
 
   /// Warm, rotating conversation responses for when no intent matches.
+  /// Doctor-like warm responses — no filler, always useful.
   static const _hindiFallbacks = [
-    "Ji, main sun rahi hoon. Aap mujhse health, dawai, ya kisi aur cheez ke baare mein pooch sakte hain.",
-    "Aapke saath baat karke achha lagta hai! Batayiye, kya madad karoon?",
-    "Main aapki seva mein hoon. Health check, SMS scan, ya dawai reminder, jo chahein poochiye.",
-    "Bilkul, main yahan hoon. Aapko kisi bhi cheez ki zaroorat ho toh boliye.",
-    "Ji haan, aapki baat sun rahi hoon. Koi bhi sawal ho, befikar hokar poochiye.",
-    "Aapki chinta meri chinta hai. Batayiye kaise madad kar sakti hoon.",
+    "Aap mujhe apni tabiyat ke baare mein bataiye, main aapko sahi guidance de sakti hoon.",
+    "Agar koi dard ya takleef hai toh bataiye, main aapko samjhati hoon kya karna chahiye.",
+    "Aap mujhse health, dawai, ya symptoms ke baare mein pooch sakte hain.",
+    "Aapko koi bhi health concern ho toh bataiye, main doctor ki tarah guide karungi.",
+    "Agar bukhar, dard, ya koi bhi pareshani ho toh mujhe bataiye.",
+    "Apni tabiyat ki koi bhi baat bataiye, main aapki madad karungi.",
   ];
 
   static const _englishFallbacks = [
-    "I'm listening! You can ask me about health, medicine reminders, or anything else.",
-    "It's lovely talking to you! How can I help you today?",
-    "I'm here for you. Ask about health check, SMS scan, medicine reminders, or anything.",
-    "Of course, I'm right here. Feel free to ask me anything.",
-    "I'm always happy to chat. What would you like to know?",
-    "Your wellbeing matters to me. Tell me how I can help.",
+    "Tell me about your symptoms, and I'll guide you on what to do.",
+    "If you're experiencing any pain or discomfort, describe it and I'll help.",
+    "You can ask me about any health concern, medication, or symptom.",
+    "Let me know what's bothering you, and I'll give you proper guidance.",
+    "Whether it's fever, pain, or any other issue — just describe it to me.",
+    "Share your health concern and I'll explain what it could be and what to do.",
   ];
 
   String _friendlyFallback(String text, bool hi) {
