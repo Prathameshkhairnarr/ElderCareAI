@@ -25,6 +25,7 @@ class RiskScoreProvider extends ChangeNotifier {
   // ── State ──
   RiskModel _risk = RiskModel.empty;
   int _localRiskScore = 0; // Tracks on-device engine score for UI
+  int _localActiveThreats = 0; // Tracks actual scam count from engine
   bool _isLoading = false;
   String? _error;
   Timer? _syncTimer;
@@ -43,6 +44,8 @@ class RiskScoreProvider extends ChangeNotifier {
   String get level => _risk.level;
   String get details => _risk.details;
   int get activeThreats => _risk.activeThreats;
+  /// Actual local threat count (1 scam SMS = 1 threat, resets on score 0)
+  int get localActiveThreats => _localActiveThreats;
   bool get isVulnerable => _risk.isVulnerable;
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -65,11 +68,21 @@ class RiskScoreProvider extends ChangeNotifier {
   /// Always authoritative — fixes any cache/isolate mismatch.
   Future<void> refreshFromEngine() async {
     final latest = await RiskScoreEngine.getScore();
+    final threats = await RiskScoreEngine.getActiveThreats();
+    bool changed = false;
 
     if (latest != _localRiskScore) {
       _localRiskScore = latest;
+      changed = true;
+    }
+    if (threats != _localActiveThreats) {
+      _localActiveThreats = threats;
+      changed = true;
+    }
+
+    if (changed) {
       _safeNotify();
-      AppLogger.info(LogCategory.risk, 'Provider hard refresh → $latest');
+      AppLogger.info(LogCategory.risk, 'Provider hard refresh → score=$latest threats=$threats');
     }
   }
 
@@ -123,8 +136,14 @@ class RiskScoreProvider extends ChangeNotifier {
 
   Future<void> _syncRiskToBackend() async {
     try {
-      await Future.delayed(const Duration(milliseconds: 10));
-      AppLogger.info(LogCategory.risk, 'Guardian live risk sync triggered');
+      await _api.syncRiskScore(
+        score: _localRiskScore,
+        activeThreats: _localActiveThreats,
+      );
+      AppLogger.info(
+        LogCategory.risk,
+        'Risk synced to backend: score=$_localRiskScore threats=$_localActiveThreats',
+      );
     } catch (e) {
       AppLogger.warn(LogCategory.risk, 'Guardian sync failed: $e');
     }

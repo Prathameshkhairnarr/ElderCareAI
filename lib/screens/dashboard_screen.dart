@@ -52,6 +52,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (mounted) setState(() {});
   }
 
+  /// Returns a message appropriate for the current local risk score.
+  /// Uses actual activeThreats count so the message matches reality
+  /// (1 SMS scam = "1 active threat", 2 = "2 active threats", etc.)
+  String _getRiskMessage() {
+    final localScore = _riskProvider.score;
+    final threats = _riskProvider.localActiveThreats;
+    final vulnerable = _riskProvider.isVulnerable;
+
+    // Score decayed to 0 — all clear regardless of stale backend data
+    if (localScore == 0) {
+      return 'All clear — no active threats detected. You are safe.';
+    }
+
+    // Score is low (< 30) — no real danger even if backend has stale data
+    if (localScore < 30) {
+      if (threats <= 0) {
+        return 'No active threats at the moment. Stay safe!';
+      }
+      return '$threats active threat${threats == 1 ? '' : 's'} detected — risk is low.';
+    }
+
+    // Build dynamic message for moderate/high/critical
+    final buffer = StringBuffer();
+
+    if (threats > 0) {
+      buffer.write('$threats active threat${threats == 1 ? '' : 's'} contributing to risk.');
+    } else {
+      buffer.write('Elevated risk detected.');
+    }
+
+    if (vulnerable) {
+      buffer.write(' ⚠ Vulnerable user — enhanced monitoring active.');
+    }
+
+    if (localScore >= 80) {
+      return '⚠ ${buffer.toString()}';
+    }
+
+    return buffer.toString();
+  }
+
+
   Future<void> _loadData() async {
     // 1. Check Backend Connectivity first
     try {
@@ -85,7 +127,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       String? userPhone = _auth.currentUser?.phone;
-      
+
       // Fallback: Read from SharedPreferences directly if currentUser isn't ready
       if (userPhone == null || userPhone.isEmpty) {
         final userDataStr = prefs.getString('user_data');
@@ -103,14 +145,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           if (mounted) setState(() => _profileImagePath = null);
         }
       } else {
-         if (mounted) setState(() => _profileImagePath = null);
+        if (mounted) setState(() => _profileImagePath = null);
       }
     } catch (_) {}
 
     if (mounted) setState(() => _loading = false);
   }
-
-
 
   void _onNavTap(int index) {
     if (index == _selectedNavIndex) return;
@@ -263,8 +303,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 borderRadius: BorderRadius.circular(14),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: const Color(0xFF4FC3F7)
-                                        .withValues(alpha: 0.3),
+                                    color: const Color(
+                                      0xFF4FC3F7,
+                                    ).withValues(alpha: 0.3),
                                     blurRadius: 8,
                                     offset: const Offset(0, 2),
                                   ),
@@ -349,7 +390,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 48),
                             child: Text(
-                              _riskProvider.details,
+                              _getRiskMessage(),
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 13,

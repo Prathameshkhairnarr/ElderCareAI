@@ -116,6 +116,28 @@ class ApiService {
     }
   }
 
+  /// Push the elder's local (decayed) risk score to backend
+  /// so guardians see the real-time score via /guardian/dashboard.
+  Future<bool> syncRiskScore({
+    required int score,
+    required int activeThreats,
+  }) async {
+    try {
+      final result = await _http.post(
+        Uri.parse('$_baseUrl/risk/sync'),
+        headers: _headers,
+        body: jsonEncode({
+          'score': score,
+          'active_threats': activeThreats,
+        }),
+      );
+      return result.isSuccess;
+    } catch (e) {
+      AppLogger.warn(LogCategory.risk, 'syncRiskScore error: $e');
+      return false;
+    }
+  }
+
   // ── SMS Analysis ─────────────────────────────────────
   Future<SmsModel?> analyzeSms(String message) async {
     try {

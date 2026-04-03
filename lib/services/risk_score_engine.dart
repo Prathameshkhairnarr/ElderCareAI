@@ -17,6 +17,7 @@ class RiskScoreEngine {
   static const _keyRecentScamWindowStart = 'risk_engine_recent_window_start';
   static const _keyLastRiskEventAt = 'risk_engine_last_risk_event_at';
   static const _keyLastDecayCheckAt = 'risk_engine_last_decay_check_at';
+  static const _keyActiveThreats = 'risk_engine_active_threats';
 
   // ── Tuning Constants ──
   static const int _safeDecay = 1; // points removed per safe SMS
@@ -53,6 +54,10 @@ class RiskScoreEngine {
             : bump.toDouble();
 
         current = (current + spikeContribution).clamp(0, 100);
+
+        // Increment local active threat counter
+        final prevThreats = prefs.getInt(_keyActiveThreats) ?? 0;
+        await prefs.setInt(_keyActiveThreats, prevThreats + 1);
 
         // Record timestamp for time-decay
         await prefs.setString(_keyLastScamAt, DateTime.now().toIso8601String());
@@ -191,6 +196,23 @@ class RiskScoreEngine {
       current = current.clamp(0, 100);
       final int newScore = current.round();
 
+      // Also decay active threats alongside score
+      int currentThreats = prefs.getInt(_keyActiveThreats) ?? 0;
+      if (currentThreats > 0) {
+        double threatDecay = currentThreats.toDouble();
+        for (int i = 0; i < loops; i++) {
+          threatDecay = threatDecay * _decayMultiplier;
+          if (threatDecay < 0.5) {
+            threatDecay = 0;
+            break;
+          }
+        }
+        final int newThreats = threatDecay.round();
+        if (newThreats != currentThreats) {
+          await prefs.setInt(_keyActiveThreats, newThreats);
+        }
+      }
+
       // Persist only if changed
       if (oldScore != newScore) {
         await prefs.setDouble(_keyScore, current);
@@ -213,6 +235,13 @@ class RiskScoreEngine {
     }
   }
 
+  /// Get the local active threat count (how many scam SMS detected).
+  /// Resets to 0 when score decays to 0.
+  static Future<int> getActiveThreats() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_keyActiveThreats) ?? 0;
+  }
+
   /// Reset score (for testing / admin purposes).
   static Future<void> reset() async {
     final prefs = await SharedPreferences.getInstance();
@@ -222,5 +251,6 @@ class RiskScoreEngine {
     await prefs.remove(_keyRecentScamWindowStart);
     await prefs.remove(_keyLastRiskEventAt);
     await prefs.remove(_keyLastDecayCheckAt);
+    await prefs.remove(_keyActiveThreats);
   }
 }
