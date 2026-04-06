@@ -10,18 +10,19 @@ import '../services/app_logger.dart';
 import 'azure_tts_service.dart';
 import 'elevenlabs_service.dart';
 import 'tts_service.dart';
-import 'speech_naturalizer.dart';
-import 'caregiver_filter.dart';
+// ── DISABLED with flutter_tts — uncomment to re-enable ──
+// import 'speech_naturalizer.dart';
+// import 'caregiver_filter.dart';
 import 'emotion_tagger.dart' show EmotionTag;
 import 'language_detector.dart';
 
 /// Which TTS engine was used for the last utterance.
 enum VoiceEngineType { azureTts, elevenLabs, flutterTts }
 
-/// Triple-layer voice engine: Azure primary → ElevenLabs secondary → flutter_tts fallback.
+/// Dual-layer voice engine: Azure primary → ElevenLabs secondary.
+/// (flutter_tts fallback is DISABLED — can be re-enabled later)
 ///
 /// Guarantees:
-///   - Voice NEVER stays silent — cascading fallback ensures speech
 ///   - No audio overlap — stops previous audio before new speech
 ///   - Debounce protection — ignores rapid-fire calls within 300ms
 ///   - Full logging — engine used, fallback reason, response time
@@ -68,8 +69,8 @@ class VoiceEngine {
   Future<void> initialize() async {
     if (_initialized) return;
 
-    // Initialize flutter_tts (always needed — final fallback)
-    await _tts.initialize();
+    // ── DISABLED: flutter_tts fallback — uncomment to re-enable ──
+    // await _tts.initialize();
 
     // Get temp directory for neural TTS audio files
     try {
@@ -96,7 +97,7 @@ class VoiceEngine {
       '[VOICE] VoiceEngine initialized — '
       'Azure $azureStatus, '
       'ElevenLabs $elevenLabsStatus, '
-      'flutter_tts READY',
+      'flutter_tts DISABLED',
     );
   }
 
@@ -151,10 +152,18 @@ class VoiceEngine {
       }
     }
 
-    // ── Final fallback to flutter_tts (full processing needed) ──
-    final ttsText = CaregiverFilter.filter(SpeechNaturalizer.naturalize(text));
-    await _fallbackToFlutterTts(ttsText, locale);
+    // ── DISABLED: flutter_tts fallback — Azure + ElevenLabs only ──
+    // If both Azure and ElevenLabs failed, log warning and stay silent.
+    AppLogger.warn(
+      LogCategory.lifecycle,
+      '[VOICE] Both Azure and ElevenLabs failed — no TTS available (flutter_tts DISABLED)',
+    );
     _isSpeaking = false;
+
+    // ── To re-enable flutter_tts fallback, uncomment below: ──
+    // final ttsText = CaregiverFilter.filter(SpeechNaturalizer.naturalize(text));
+    // await _fallbackToFlutterTts(ttsText, locale);
+    // _isSpeaking = false;
   }
 
   /// Speak with emotion-aware voice modulation.
@@ -169,6 +178,7 @@ class VoiceEngine {
     if (text.trim().isEmpty) return;
 
     // Safely cast emotion to EmotionTag
+    // ignore: unused_local_variable — kept for flutter_tts re-enable
     final EmotionTag safeEmotion = (emotion is EmotionTag)
         ? emotion
         : EmotionTag.neutral;
@@ -209,10 +219,17 @@ class VoiceEngine {
       }
     }
 
-    // ── Fallback to flutter_tts with full processing + emotion ──
-    final ttsText = CaregiverFilter.filter(SpeechNaturalizer.naturalize(text));
-    await _fallbackToFlutterTtsWithEmotion(ttsText, locale, safeEmotion);
+    // ── DISABLED: flutter_tts fallback — Azure + ElevenLabs only ──
+    AppLogger.warn(
+      LogCategory.lifecycle,
+      '[VOICE] Both Azure and ElevenLabs failed — no TTS available (flutter_tts DISABLED)',
+    );
     _isSpeaking = false;
+
+    // ── To re-enable flutter_tts fallback, uncomment below: ──
+    // final ttsText = CaregiverFilter.filter(SpeechNaturalizer.naturalize(text));
+    // await _fallbackToFlutterTtsWithEmotion(ttsText, locale, safeEmotion);
+    // _isSpeaking = false;
   }
 
   // ══════════════════════════════════════════════════════
@@ -394,10 +411,11 @@ class VoiceEngine {
   }
 
   // ══════════════════════════════════════════════════════
-  //  FLUTTER_TTS FALLBACK
+  //  FLUTTER_TTS FALLBACK (DISABLED — kept for re-enable)
   // ══════════════════════════════════════════════════════
 
   /// Fallback: speak via flutter_tts (plain mode).
+  // ignore: unused_element
   Future<void> _fallbackToFlutterTts(String text, String locale) async {
     AppLogger.info(
       LogCategory.lifecycle,
@@ -419,6 +437,7 @@ class VoiceEngine {
   }
 
   /// Fallback: speak via flutter_tts with emotion modulation.
+  // ignore: unused_element
   Future<void> _fallbackToFlutterTtsWithEmotion(
     String text,
     String locale,
@@ -456,17 +475,18 @@ class VoiceEngine {
       await _audioPlayer.stop();
     } catch (_) {}
 
-    // Stop flutter_tts
-    try {
-      await _tts.stop();
-    } catch (_) {}
+    // ── DISABLED: flutter_tts stop — uncomment to re-enable ──
+    // try {
+    //   await _tts.stop();
+    // } catch (_) {}
   }
 
   /// Clean up all resources.
   Future<void> dispose() async {
     await stop();
     await _audioPlayer.dispose();
-    _tts.dispose();
+    // ── DISABLED: flutter_tts dispose — uncomment to re-enable ──
+    // _tts.dispose();
     _azureTts.clearCache();
     _elevenLabs.clearCache();
 

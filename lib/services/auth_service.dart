@@ -13,6 +13,7 @@ class UserProfile {
   final UserRole role;
   final bool isActive;
   final bool isPhoneVerified;
+  final String? profilePhoto;
   final String? createdAt;
   final String? lastLoginAt;
 
@@ -23,6 +24,7 @@ class UserProfile {
     required this.role,
     this.isActive = true,
     this.isPhoneVerified = true,
+    this.profilePhoto,
     this.createdAt,
     this.lastLoginAt,
   });
@@ -38,6 +40,7 @@ class UserProfile {
       ),
       isActive: json['is_active'] as bool? ?? true,
       isPhoneVerified: json['is_phone_verified'] as bool? ?? true,
+      profilePhoto: json['profile_photo'] as String?,
       createdAt: json['created_at'] as String?,
       lastLoginAt: json['last_login_at'] as String?,
     );
@@ -50,6 +53,7 @@ class UserProfile {
     'role': role.name,
     'is_active': isActive,
     'is_phone_verified': isPhoneVerified,
+    'profile_photo': profilePhoto,
     'created_at': createdAt,
     'last_login_at': lastLoginAt,
   };
