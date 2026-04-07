@@ -344,6 +344,8 @@ class AiBrainService {
     userMessage.write(_sanitizeInput(rawInput));
 
     // Azure OpenAI chat completions format
+    final isGitHubToken = ApiConfig.azureOpenAiKey.startsWith('ghp_') || ApiConfig.azureOpenAiKey.startsWith('github_pat_');
+
     final requestBody = jsonEncode({
       'messages': [
         {'role': 'system', 'content': _systemPrompt},
@@ -351,14 +353,20 @@ class AiBrainService {
       ],
       'temperature': 0.6,
       'max_tokens': 150,
+      if (isGitHubToken) 'model': 'gpt-4o', // GitHub endpoint requires model parameter
     });
+
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'api-key': ApiConfig.azureOpenAiKey,
+    };
+    if (isGitHubToken) {
+      headers['Authorization'] = 'Bearer ${ApiConfig.azureOpenAiKey}';
+    }
 
     final response = await http.post(
       Uri.parse(ApiConfig.azureOpenAiEndpoint),
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': ApiConfig.azureOpenAiKey,
-      },
+      headers: headers,
       body: requestBody,
     );
 

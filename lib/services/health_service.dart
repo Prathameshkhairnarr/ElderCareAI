@@ -122,13 +122,33 @@ class HealthService {
       try {
         final now = DateTime.now();
         final midnight = DateTime(now.year, now.month, now.day);
-        final hcSteps = await _health.getTotalStepsInInterval(midnight, now);
-        if (hcSteps != null && hcSteps > 0) return hcSteps.toInt();
+
+        List<HealthDataPoint> stepData = await _health.getHealthDataFromTypes(
+          startTime: midnight,
+          endTime: now,
+          types: [HealthDataType.STEPS],
+        );
+
+        if (stepData.isNotEmpty) {
+          int maxSteps = 0;
+          Map<String, int> stepsBySource = {};
+          for (var point in stepData) {
+            final source = point.sourceName;
+            final val = point.value is NumericHealthValue
+                ? (point.value as NumericHealthValue).numericValue.toInt()
+                : int.tryParse(point.value.toString()) ?? 0;
+            stepsBySource[source] = (stepsBySource[source] ?? 0) + val;
+          }
+
+          stepsBySource.forEach((source, count) {
+            if (count > maxSteps) maxSteps = count;
+          });
+
+          if (maxSteps > 0) return maxSteps;
+        }
       } catch (_) {}
     }
-    // Cannot easily await the stream synchronously without listening, rely on UI stream mostly
-    // But as a fallback we return 0 here. UI should use stepStream()
-    return 0; // Handled by stream live
+    return 0;
   }
 
   // ── LEVEL 2: SLEEP ESTIMATION (Motion + Health Connect) ──

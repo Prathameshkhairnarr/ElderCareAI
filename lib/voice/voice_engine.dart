@@ -9,6 +9,7 @@ import '../config/api_config.dart';
 import '../services/app_logger.dart';
 import 'azure_tts_service.dart';
 import 'elevenlabs_service.dart';
+import 'google_tts_service.dart';
 import 'tts_service.dart';
 // ── DISABLED with flutter_tts — uncomment to re-enable ──
 // import 'speech_naturalizer.dart';
@@ -37,6 +38,7 @@ class VoiceEngine {
   final TtsService _tts = TtsService();
   final ElevenLabsService _elevenLabs = ElevenLabsService.instance;
   final AzureTtsService _azureTts = AzureTtsService.instance;
+  final GoogleTtsService _googleTts = GoogleTtsService.instance;
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   bool _initialized = false;
@@ -142,6 +144,15 @@ class VoiceEngine {
       }
     }
 
+    // ── Try Google TTS second (fallback fallback if Azure fails) ──
+    if (_googleTts.isConfigured) {
+      final success = await _tryGoogleTts(text, locale);
+      if (success) {
+        _isSpeaking = false;
+        return;
+      }
+    }
+
     // ── Try ElevenLabs second (light cleanup — AI handles Hindi natively) ──
     if (_elevenLabs.isConfigured) {
       final elevenLabsText = _lightCleanForElevenLabs(text);
@@ -203,6 +214,15 @@ class VoiceEngine {
     // ── Try Azure first (neural voice handles emotion naturally) ──
     if (_azureTts.isConfigured) {
       final success = await _tryAzure(text, locale);
+      if (success) {
+        _isSpeaking = false;
+        return;
+      }
+    }
+
+    // ── Try Google TTS second (fallback fallback if Azure fails) ──
+    if (_googleTts.isConfigured) {
+      final success = await _tryGoogleTts(text, locale);
       if (success) {
         _isSpeaking = false;
         return;
@@ -290,6 +310,37 @@ class VoiceEngine {
       AppLogger.warn(
         LogCategory.lifecycle,
         '[VOICE] Azure unexpected error → trying next engine — $e',
+      );
+      return false;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  GOOGLE TTS ENGINE
+  // ══════════════════════════════════════════════════════
+
+  Future<bool> _tryGoogleTts(String text, String locale) async {
+    final stopwatch = Stopwatch()..start();
+    final lang = locale.startsWith('hi') ? 'hi-IN' : 'en-US';
+    final voice = locale.startsWith('hi') ? ApiConfig.googleVoiceName : 'en-US-Neural2-F';
+
+    try {
+      AppLogger.info(
+        LogCategory.lifecycle,
+        '[VOICE] Using Google TTS voice=$voice lang=$lang',
+      );
+
+      final audioBytes = await _googleTts.synthesize(text, languageCode: lang, voiceName: voice);
+      stopwatch.stop();
+
+      await _playAudioBytes(audioBytes);
+      return true;
+    } catch (e) {
+      stopwatch.stop();
+      _fallbackCount++;
+      AppLogger.warn(
+        LogCategory.lifecycle,
+        '[VOICE] Google TTS failed → trying next engine — ${stopwatch.elapsedMilliseconds}ms — $e',
       );
       return false;
     }
@@ -488,6 +539,7 @@ class VoiceEngine {
     // ── DISABLED: flutter_tts dispose — uncomment to re-enable ──
     // _tts.dispose();
     _azureTts.clearCache();
+    _googleTts.clearCache();
     _elevenLabs.clearCache();
 
     AppLogger.info(

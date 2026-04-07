@@ -6,7 +6,7 @@ class ApiConfig {
   // ── Gemini AI Configuration ──
   static final String geminiApiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
 
-  static const String geminiModel = 'gemini-2.0-flash';
+  static const String geminiModel = 'gemini-2.0-pro';
 
   static String get geminiEndpoint =>
       'https://generativelanguage.googleapis.com/v1beta/models/$geminiModel:generateContent?key=$geminiApiKey';
@@ -28,9 +28,13 @@ class ApiConfig {
       azureOpenAiKey.isNotEmpty && azureOpenAiResource.isNotEmpty;
 
   /// Azure OpenAI chat completions endpoint.
-  static String get azureOpenAiEndpoint =>
-      'https://$azureOpenAiResource.openai.azure.com/openai/deployments/'
-      '$azureOpenAiDeployment/chat/completions?api-version=$azureOpenAiApiVersion';
+  static String get azureOpenAiEndpoint {
+    if (azureOpenAiKey.startsWith('ghp_') || azureOpenAiKey.startsWith('github_pat_')) {
+      return 'https://models.inference.ai.azure.com/chat/completions';
+    }
+    return 'https://$azureOpenAiResource.openai.azure.com/openai/deployments/'
+        '$azureOpenAiDeployment/chat/completions?api-version=$azureOpenAiApiVersion';
+  }
 
   // ── Azure Speech Service Configuration ──
   static final String azureSubscriptionKey =
@@ -57,6 +61,18 @@ class ApiConfig {
   /// Azure Speech Service TTS endpoint.
   static String get azureEndpoint =>
       'https://$azureRegion.tts.speech.microsoft.com/cognitiveservices/v1';
+
+  // ── Google Cloud TTS Configuration ──
+  static final String googleTtsApiKey = dotenv.env['GOOGLE_TTS_API_KEY'] ?? '';
+
+  static const String googleTtsEndpoint =
+      'https://texttospeech.googleapis.com/v1/text:synthesize';
+
+  /// Whether Google Cloud TTS is configured with a real API key.
+  static bool get isGoogleTtsEnabled => googleTtsApiKey.isNotEmpty;
+
+  // Primary Google Voice — Neural2 (female, very natural)
+  static const String googleVoiceName = 'hi-IN-Neural2-A';
 
   // ── ElevenLabs TTS Configuration ──
   static final String elevenLabsApiKey = dotenv.env['ELEVENLABS_API_KEY'] ?? '';

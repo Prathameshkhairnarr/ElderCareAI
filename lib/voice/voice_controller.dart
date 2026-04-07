@@ -555,11 +555,18 @@ class VoiceController extends ChangeNotifier {
   //  WAKE WORD INTEGRATION
   // ══════════════════════════════════════════════
 
-  /// Start wake word detection. Call from the AI Doctor screen.
   Future<void> startWakeWordDetection() async {
-    _wakeWord.onWakeWordDetected = () {
-      AppLogger.info(LogCategory.lifecycle, '[VOICE] Wake word detected — starting listener');
-      _startListening();
+    _wakeWord.onWakeWordDetected = (String text) {
+      final stripped = _stripWakeWordPrefix(text);
+      if (stripped.trim().isNotEmpty) {
+        AppLogger.info(LogCategory.lifecycle, '[VOICE] Wake word + command detected: "$stripped"');
+        _transcript = text;
+        notifyListeners();
+        _processTranscript(text);
+      } else {
+        AppLogger.info(LogCategory.lifecycle, '[VOICE] Wake word only detected — starting listener');
+        _startListening();
+      }
     };
     await _wakeWord.start();
   }

@@ -18,8 +18,8 @@ class WakeWordService {
   bool _isListening = false;
   bool _isActive = false;
 
-  /// Callback when wake word is detected.
-  void Function()? onWakeWordDetected;
+  /// Callback when wake word is detected. Passes the full text recognized.
+  void Function(String recognizedText)? onWakeWordDetected;
 
   /// Wake phrases to listen for (case-insensitive).
   static const _wakePhrases = [
@@ -153,7 +153,7 @@ class WakeWordService {
                 _stopListening();
                 _isActive = false; // pause wake word while assistant is active
                 _stopWatchdog();
-                onWakeWordDetected?.call();
+                onWakeWordDetected?.call(text);
               }
               break;
             }
@@ -164,7 +164,7 @@ class WakeWordService {
         listenOptions: stt.SpeechListenOptions(
           partialResults: true,
           cancelOnError: false,
-          listenMode: stt.ListenMode.search, // shorter utterances
+          listenMode: stt.ListenMode.dictation, // Allows longer sentences
         ),
         localeId: 'en_IN', // English for better "hey veda" detection
       );

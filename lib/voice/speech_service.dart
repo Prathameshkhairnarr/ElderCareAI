@@ -58,8 +58,8 @@ class SpeechService {
     void Function(String partial)? onPartial,
     void Function()? onTimeout,
     String localeId = 'hi_IN',
-    Duration listenFor = const Duration(seconds: 30),
-    Duration pauseFor = const Duration(seconds: 5),
+    Duration listenFor = const Duration(seconds: 40),
+    Duration pauseFor = const Duration(seconds: 8),
   }) async {
     if (_isListening) return; // prevent double-listen
 

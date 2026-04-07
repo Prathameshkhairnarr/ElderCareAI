@@ -57,13 +57,15 @@ class _AiDoctorScreenState extends State<AiDoctorScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached ||
-        state == AppLifecycleState.inactive) {
-      // App going to background or being killed — stop EVERYTHING instantly
+        state == AppLifecycleState.detached) {
+      // App going to background or screen off — stop wake word mic to save battery
       _voice.stopWakeWordDetection();
-      _voice.forceReset();
+      // Only reset if completely idle, DO NOT cut off active conversations or speech
+      if (_voice.isIdle) {
+        _voice.forceReset();
+      }
     } else if (state == AppLifecycleState.resumed && widget.isVisible) {
-      // App came back and AI Doctor tab is visible — restart wake word
+      // App came back — restart wake word
       _voice.startWakeWordDetection();
     }
   }

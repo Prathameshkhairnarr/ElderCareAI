@@ -32,6 +32,7 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> with WidgetsB
   double _currentSpO2 = 0.0;
   double _currentBP = 0.0;
   double _currentTemp = 0.0;
+
   
   int _healthScore = 0;
 
@@ -74,34 +75,42 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> with WidgetsB
     if (!mounted) return;
     setState(() => _isLoading = true);
 
+    // 0. INSTANT: Show cached steps from last session immediately
+    int cached = await _googleFitService.getCachedSteps();
+    if (cached > 0 && mounted) {
+      setState(() {
+        _currentSteps = cached;
+        _recalculateScore();
+        _googleFitService.cachedSteps = _currentSteps;
+        _googleFitService.cachedHealthScore = _healthScore;
+        _googleFitService.notifyCacheUpdated();
+      });
+    }
+
     print('DEBUG_HEALTH: Calling _healthService.initialize()');
     await _healthService.initialize();
     print('DEBUG_HEALTH: _healthService.initialize() done');
 
-    // 1. Subscribe to Live Steps (Phone Sensors) - Fallback ONLY
+    // 1. Subscribe to Live Steps (Phone Sensors) - Fallback
+    // Using phone sensor pedometer because Health Connect isn't syncing properly on this device
     print('DEBUG_HEALTH: Subscribing to stepStream()');
     _stepSubscription = _healthService.stepStream().listen((steps) {
       if (!mounted) return;
       setState(() {
-        // ONLY use pedometer if Google Fit is NOT connected
-        if (!_isGoogleFitConnected) {
-           _currentSteps = steps;
-           _recalculateScore();
-           // Update cache so ALL screens see the latest score
-           _googleFitService.cachedSteps = _currentSteps;
-           _googleFitService.cachedHealthScore = _healthScore;
-           _googleFitService.notifyCacheUpdated();
-        }
+          _currentSteps = steps;
+          _recalculateScore();
+          _googleFitService.cachedSteps = _currentSteps;
+          _googleFitService.cachedHealthScore = _healthScore;
+          _googleFitService.notifyCacheUpdated();
       });
     }, onError: (error) {
       print('DEBUG_HEALTH: stepStream error: $error');
-      AppLogger.error(LogCategory.lifecycle, 'Step subscription error: $error');
     });
 
-    // 2. Automatically sync Google Fit / Health Connect in the background
+    // 2. Automatically sync Health Connect in the background for Heart Rate etc.
     await _connectGoogleFit();
 
-    // 3. Start auto-refresh scheduler (1 minute for static vitals)
+    // 2. Start auto-refresh scheduler (1 minute for fresh vitals)
     _refreshTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       _connectGoogleFit();
     });
@@ -154,13 +163,22 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> with WidgetsB
     _healthScore = _healthService.calculateHealthScore(_currentSteps, _currentSleep, _currentHR);
   }
 
-  Future<void> _connectGoogleFit() async {
+  Future<void> _connectGoogleFit({bool forceRequest = false}) async {
     if (!mounted) return;
     setState(() => _isGoogleFitConnecting = true);
 
-    bool success = await _googleFitService.init();
+    // Use silent init() for auto-refresh to avoid crash with telephony plugin.
+    // Only use requestPermissions() when user clicks "Connect" button explicitly.
+    bool success;
+    if (forceRequest) {
+      // Small delay to let other plugins finish their permission handling
+      await Future.delayed(const Duration(milliseconds: 500));
+      success = await _googleFitService.requestPermissions();
+    } else {
+      success = await _googleFitService.init();
+    }
 
-    if (success) {
+    if (success && _googleFitService.isConnected) {
       int steps = await _googleFitService.getStepsToday();
       double? hr = await _googleFitService.getHeartRate();
       double? spo2 = await _googleFitService.getSpO2();
@@ -171,8 +189,10 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> with WidgetsB
       if (mounted) {
         setState(() {
           _isGoogleFitConnected = true;
-          // Direct assignment from Google Fit / Health Connect (Watch priority)
-          if (steps >= 0) _currentSteps = steps;
+          // Direct assignment from Health Connect (Samsung Health priority)
+          if (steps > 0) {
+            _currentSteps = steps;
+          }
           if (hr != null && hr > 0) _currentHR = hr;
           if (spo2 != null && spo2 > 0) _currentSpO2 = spo2;
           if (bp != null && bp > 0) _currentBP = bp;
@@ -287,12 +307,7 @@ class _HealthMonitorScreenState extends State<HealthMonitorScreen> with WidgetsB
                           TextButton(
                             onPressed: () async {
                               setState(() => _isGoogleFitConnecting = true);
-                              bool success = await _googleFitService.requestPermissions();
-                              if (success) {
-                                await _connectGoogleFit();
-                              } else {
-                                setState(() => _isGoogleFitConnecting = false);
-                              }
+                              await _connectGoogleFit(forceRequest: true);
                             },
                             style: TextButton.styleFrom(
                               foregroundColor: Colors.redAccent,
