@@ -12,12 +12,21 @@ class LocationService {
     _initialized = true;
 
     try {
-      final status = await Permission.location.request();
+      var status = await Permission.location.status;
       if (!status.isGranted) {
-        return;
+        status = await Permission.location.request();
+        if (!status.isGranted) {
+          return;
+        }
       }
 
-      await Geolocator.requestPermission();
+      var geoPermission = await Geolocator.checkPermission();
+      if (geoPermission == LocationPermission.denied || geoPermission == LocationPermission.deniedForever) {
+        geoPermission = await Geolocator.requestPermission();
+        if (geoPermission != LocationPermission.always && geoPermission != LocationPermission.whileInUse) {
+           return;
+        }
+      }
       AppLogger.info(
         LogCategory.lifecycle,
         '[LOCATION] Geolocator initialized',

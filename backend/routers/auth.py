@@ -137,3 +137,30 @@ def get_profile_photo(
         "photo": current_user.profile_photo,
         "has_photo": current_user.profile_photo is not None,
     }
+
+
+from schemas.schemas import ResetPinRequest
+
+@router.post("/reset-pin")
+def reset_pin(
+    body: ResetPinRequest,
+    db: Session = Depends(get_db),
+):
+    """Reset PIN via phone number (Unauthenticated flow)"""
+    normalized_phone = normalize_phone(body.phone)
+    user = db.query(User).filter(User.phone == normalized_phone).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="No account found with this phone number")
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="Account is deactivated. Contact support.",
+        )
+
+    user.password_hash = hash_password(body.new_pin)
+    db.commit()
+    logger.info(f"PIN reset executed for phone {normalized_phone}")
+
+    return {"status": "success", "message": "PIN reset successfully. You can now login with your new PIN."}

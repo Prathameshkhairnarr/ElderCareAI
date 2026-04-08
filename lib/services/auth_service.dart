@@ -257,6 +257,51 @@ class AuthService {
     return false;
   }
 
+  // ── Reset PIN ────────────────────────────────────────
+  Future<bool> resetPin(String phone, String newPin) async {
+    try {
+      final normalizedPhone = AuthService.normalizePhone(phone);
+      AppLogger.info(
+        LogCategory.auth,
+        'Attempting PIN reset for: $normalizedPhone',
+      );
+
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/auth/reset-pin'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'phone': normalizedPhone,
+              'new_pin': newPin,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      AppLogger.info(
+        LogCategory.auth,
+        'Reset PIN response status: ${response.statusCode}',
+      );
+
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        try {
+          final errBody = jsonDecode(response.body);
+          final detail = errBody['detail'] ?? 'Unknown error';
+          throw Exception('$detail');
+        } catch (e) {
+          if (e is Exception && e.toString().contains('Exception:')) rethrow;
+          throw Exception('Server error: ${response.statusCode}');
+        }
+      }
+    } on http.ClientException catch (_) {
+      throw Exception('Cannot reach server. Check your connection.');
+    } catch (e) {
+      if (e.toString().contains('Exception:')) rethrow;
+      throw Exception('Failed to reset PIN: $e');
+    }
+  }
+
   // ── Logout ───────────────────────────────────────────
   Future<void> logout() async {
     _token = null;

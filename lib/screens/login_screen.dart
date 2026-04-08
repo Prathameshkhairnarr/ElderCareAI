@@ -4,6 +4,7 @@ import '../widgets/page_transition.dart';
 import 'dashboard_screen.dart';
 import 'register_screen.dart';
 import 'guardian_dashboard_screen.dart';
+import 'reset_pin_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -201,6 +202,31 @@ class _LoginScreenState extends State<LoginScreen> {
                                   if (v.length < 4) return 'Min 4 digits';
                                   return null;
                                 },
+                              ),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: () {
+                                    Navigator.of(context).push(
+                                      PageTransition(
+                                        page: const ResetPinScreen(),
+                                      ),
+                                    );
+                                  },
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  child: const Text(
+                                    'Forgot PIN?',
+                                    style: TextStyle(
+                                      color: Color(0xFF4FC3F7),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
                               ),
                               if (_error != null) ...[
                                 const SizedBox(height: 12),

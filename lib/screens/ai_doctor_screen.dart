@@ -150,7 +150,7 @@ class _AiDoctorScreenState extends State<AiDoctorScreen>
             const SizedBox(height: 20),
 
             // ── Active Medications ──
-            const _MedicationReminderCard(),
+            _MedicationReminderCard(isVisible: widget.isVisible),
             const SizedBox(height: 20),
 
             // ── Live Health Metrics ──
@@ -769,7 +769,8 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
 // ═══════════════════════════════════════════════════════════════
 
 class _MedicationReminderCard extends StatefulWidget {
-  const _MedicationReminderCard();
+  final bool isVisible;
+  const _MedicationReminderCard({this.isVisible = true});
 
   @override
   State<_MedicationReminderCard> createState() => _MedicationReminderCardState();
@@ -784,6 +785,14 @@ class _MedicationReminderCardState extends State<_MedicationReminderCard> {
   void initState() {
     super.initState();
     _loadMeds();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MedicationReminderCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isVisible && widget.isVisible) {
+      _loadMeds();
+    }
   }
 
   Future<void> _loadMeds() async {

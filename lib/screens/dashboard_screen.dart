@@ -142,7 +142,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (path != null && File(path).existsSync()) {
           if (mounted) setState(() => _profileImagePath = path);
         } else {
-          if (mounted) setState(() => _profileImagePath = null);
+          // Fetch from cloud if missing
+          try {
+            final cloudPhoto = await _api.getProfilePhoto();
+            if (cloudPhoto != null && mounted) {
+              final bytes = base64Decode(cloudPhoto);
+              final dir = await Directory.systemTemp.createTemp('profile_');
+              final file = File('${dir.path}/profile_photo.jpg');
+              await file.writeAsBytes(bytes);
+
+              await prefs.setString('profile_image_$userPhone', file.path);
+              if (mounted) setState(() => _profileImagePath = file.path);
+            } else {
+              if (mounted) setState(() => _profileImagePath = null);
+            }
+          } catch (_) {
+            if (mounted) setState(() => _profileImagePath = null);
+          }
         }
       } else {
         if (mounted) setState(() => _profileImagePath = null);

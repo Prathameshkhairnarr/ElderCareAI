@@ -123,7 +123,7 @@ class VoiceController extends ChangeNotifier {
     if (!ready) return;
 
     const greeting =
-        'Namaste! Main Didi hoon, aapki AI Doctor. Agar tabiyat mein koi takleef ho toh bataiye.';
+        'Namaste! Main hoon aapki Veda, aapki doctor friend. Agar tabiyat mein koi takleef ho toh bataiye.';
     _response = greeting;
     _setState(VoiceState.speaking);
 
@@ -519,7 +519,7 @@ class VoiceController extends ChangeNotifier {
     _isConversationActive = false;
     _stt.cancel();
     _voiceEngine.stop();
-    _wakeWord.stop();
+    // _wakeWord.stop();
     _setState(VoiceState.idle);
   }
 
@@ -556,6 +556,8 @@ class VoiceController extends ChangeNotifier {
   // ══════════════════════════════════════════════
 
   Future<void> startWakeWordDetection() async {
+    // Wake word disabled as per user request
+    /*
     _wakeWord.onWakeWordDetected = (String text) {
       final stripped = _stripWakeWordPrefix(text);
       if (stripped.trim().isNotEmpty) {
@@ -569,22 +571,23 @@ class VoiceController extends ChangeNotifier {
       }
     };
     await _wakeWord.start();
+    */
   }
 
   /// Stop wake word detection.
   void stopWakeWordDetection() {
-    _wakeWord.stop();
+    // _wakeWord.stop();
   }
 
   void _pauseWakeWord() {
-    _wakeWord.stop();
+    // _wakeWord.stop();
   }
 
   void _resumeWakeWord() {
     // Only resume if not in conversation mode
-    if (!_isConversationActive) {
-      _wakeWord.resume();
-    }
+    // if (!_isConversationActive) {
+    //   _wakeWord.resume();
+    // }
   }
 
   // ── State helpers ──
