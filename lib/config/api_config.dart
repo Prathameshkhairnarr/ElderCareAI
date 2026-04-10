@@ -1,18 +1,21 @@
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ApiConfig {
-  static const String baseUrl = 'https://eldercareai.onrender.com';
+  static const String baseUrl = 'https://eldercare-backend-awcwaemida-as.a.run.app';
 
   // ── Gemini AI Configuration ──
   static final String geminiApiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
 
-  static const String geminiModel = 'gemini-2.0-pro';
+  static const String geminiModel = 'gemini-2.0-flash';
 
   static String get geminiEndpoint =>
       'https://generativelanguage.googleapis.com/v1beta/models/$geminiModel:generateContent?key=$geminiApiKey';
 
-  // ── Azure OpenAI Configuration ──
+  // ── Azure OpenAI Configuration (Used globally by Ai Doctor) ──
   static final String azureOpenAiKey = dotenv.env['AZURE_OPENAI_KEY'] ?? '';
+
+  // ── Standalone GitHub Vision Token (Used explicitly by Prescription Reader) ──
+  static final String visionGithubToken = dotenv.env['VISION_GITHUB_TOKEN'] ?? '';
 
   static final String azureOpenAiResource =
       dotenv.env['AZURE_OPENAI_RESOURCE'] ?? '';
@@ -29,7 +32,8 @@ class ApiConfig {
 
   /// Azure OpenAI chat completions endpoint.
   static String get azureOpenAiEndpoint {
-    if (azureOpenAiKey.startsWith('ghp_') || azureOpenAiKey.startsWith('github_pat_')) {
+    if (azureOpenAiKey.startsWith('ghp_') ||
+        azureOpenAiKey.startsWith('github_pat_')) {
       return 'https://models.inference.ai.azure.com/chat/completions';
     }
     return 'https://$azureOpenAiResource.openai.azure.com/openai/deployments/'

@@ -16,6 +16,7 @@ import 'alerts_history_screen.dart';
 import 'health_monitor_screen.dart';
 import 'guardian_setup_screen.dart';
 import 'ai_doctor_screen.dart';
+import 'prescription_reader_screen.dart';
 
 import 'profile/profile_screen.dart';
 
@@ -191,8 +192,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             _buildHomeTab(), // 0: Home
             AiDoctorScreen(isVisible: _selectedNavIndex == 1), // 1: AI Doctor
-            const SosScreen(), // 2: SOS
-            const HealthMonitorScreen(), // 3: Health Live Dashboard
+            const PrescriptionReaderScreen(), // 2: Rx Reader
+            const SosScreen(), // 3: SOS
+            const HealthMonitorScreen(), // 4: Health Live Dashboard
           ],
         ),
         bottomNavigationBar: NavigationBar(
@@ -206,6 +208,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             NavigationDestination(
               icon: Icon(Icons.medical_services_rounded),
               label: 'AI Doctor',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.document_scanner_rounded),
+              label: 'Rx\u00A0Reader',
             ),
             NavigationDestination(
               icon: Icon(Icons.emergency_rounded),
@@ -534,7 +540,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         title: 'SOS Emergency',
         subtitle: 'Alert emergency contacts',
         color: const Color(0xFFEF5350),
-        onTap: () => setState(() => _selectedNavIndex = 2),
+        onTap: () => setState(() => _selectedNavIndex = 3),
       ),
       _DashCardData(
         icon: Icons.notification_important_rounded,
@@ -552,7 +558,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         title: 'My Health',
         subtitle: 'Vitals, profile & wellness',
         color: const Color(0xFFEC407A),
-        onTap: () => setState(() => _selectedNavIndex = 3),
+        onTap: () => setState(() => _selectedNavIndex = 4),
       ),
       _DashCardData(
         icon: Icons.medical_services_rounded,
@@ -560,6 +566,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         subtitle: 'Voice assistant & health tools',
         color: const Color(0xFF26A69A),
         onTap: () => setState(() => _selectedNavIndex = 1),
+      ),
+      _DashCardData(
+        icon: Icons.document_scanner_rounded,
+        title: 'Rx Reader',
+        subtitle: 'Scan prescriptions & reports',
+        color: const Color(0xFF29B6F6),
+        onTap: () => setState(() => _selectedNavIndex = 2),
       ),
     ];
 

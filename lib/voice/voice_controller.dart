@@ -123,7 +123,9 @@ class VoiceController extends ChangeNotifier {
     if (!ready) return;
 
     const greeting =
-        'Namaste! Main hoon aapki Veda, aapki doctor friend. Agar tabiyat mein koi takleef ho toh bataiye.';
+        'Hmm... namaste... main aapki Veda hu... aapki doctor friend... '
+        'kahiye... main aapki kya madad kar sakti hu?... '
+        'main sun rahi hu...';
     _response = greeting;
     _setState(VoiceState.speaking);
 
@@ -231,7 +233,9 @@ class VoiceController extends ChangeNotifier {
           '[VOICE] Timeout — speaking retry prompt',
         );
         _transcript = '';
-        _response = "Aapki awaaz clear nahi aa payi. Zara dobara boliye, main sun rahi hoon.";
+        _response = "Hmm... mujhe awaaz clear nahi aa rahi... "
+            "ek second... kya aap dobara bol sakte ho?... "
+            "main sun rahi hu...";
         _speakResponse(_response, 'hi-IN');
       },
       localeId: sttLocale,
@@ -263,7 +267,9 @@ class VoiceController extends ChangeNotifier {
 
     if (text.trim().isEmpty) {
       // Speak friendly retry instead of showing error
-      _response = "Mujhe awaaz clear nahi mili, dobara boliyega.";
+      _response = "Hmm... mujhe theek se sunai nahi diya... "
+          "kya aap thoda zor se bol sakte ho?... "
+          "main sun rahi hu...";
       _speakResponse(_response, 'hi-IN');
       return;
     }

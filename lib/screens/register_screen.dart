@@ -229,7 +229,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     data: Theme.of(ctx).copyWith(
                                       colorScheme: const ColorScheme.dark(
                                         primary: Color(0xFF4FC3F7),
-                                        surface: Color(0xFF16213E),
+                                        surface: Color(0xFF1A1A2E),
+                                        onPrimary: Colors.black,
                                       ),
                                     ),
                                     child: child!,

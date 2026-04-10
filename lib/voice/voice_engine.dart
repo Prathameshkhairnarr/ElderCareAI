@@ -429,26 +429,10 @@ class VoiceEngine {
       );
       await tempFile.writeAsBytes(bytes, flush: true);
 
-      // Set up completion listener BEFORE play to avoid race
-      final completer = Completer<void>();
-      final subscription = _audioPlayer.playerStateStream.listen((state) {
-        if (state.processingState == ProcessingState.completed) {
-          if (!completer.isCompleted) completer.complete();
-        }
-      });
-
       await _audioPlayer.setFilePath(tempFile.path);
 
-      // Fire-and-forget play — audio starts immediately, no await
-      _audioPlayer.play();
-
-      // Wait for completion (30s safety — most TTS is < 10s)
-      await completer.future.timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {},
-      );
-
-      await subscription.cancel();
+      // play() blocks until playback completes naturally
+      await _audioPlayer.play();
 
       // Async cleanup — don't block
       tempFile.delete().catchError((_) => tempFile);
