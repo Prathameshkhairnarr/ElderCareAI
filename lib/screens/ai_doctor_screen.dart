@@ -193,7 +193,7 @@ class _MedicalResponseCard extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest,
+            color: cs.surface,
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
               color: response.isEmergency 
@@ -204,9 +204,9 @@ class _MedicalResponseCard extends StatelessWidget {
             boxShadow: [
               BoxShadow(
                 color: (response.isEmergency ? const Color(0xFFEF5350) : cs.primary)
-                    .withOpacity(0.1),
-                blurRadius: 20,
-                offset: const Offset(0, 4),
+                    .withOpacity(0.08),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
@@ -465,14 +465,14 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
         margin: const EdgeInsets.all(16),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: cs.surfaceContainerHighest,
+          color: cs.surface,
           borderRadius: BorderRadius.circular(24),
           border: Border.all(color: cs.outline.withValues(alpha: 0.1)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.2),
-              blurRadius: 20,
-              offset: const Offset(0, -4),
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
             ),
           ],
         ),
@@ -502,14 +502,14 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
                 Icons.smart_toy_rounded,
                 'AI Doctor',
                 cs,
-                iconColor: const Color(0xFF4FC3F7),
+                iconColor: cs.primary,
               ),
               const SizedBox(height: 6),
               _sheetBubble(
                 _vc.response,
-                const Color(0xFF4FC3F7).withValues(alpha: 0.08),
+                cs.primary.withValues(alpha: 0.08),
                 cs.onSurface,
-                const Color(0xFF4FC3F7).withValues(alpha: 0.15),
+                cs.primary.withValues(alpha: 0.15),
               ),
             ],
             const SizedBox(height: 12),
@@ -579,7 +579,7 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
       case VoiceState.error:
         return ('Error', Colors.redAccent, Icons.error_outline_rounded);
       case VoiceState.idle:
-        return ('Tap to speak', const Color(0xFF4FC3F7), Icons.mic_rounded);
+        return ('Tap to speak', Theme.of(context).colorScheme.primary, Icons.mic_rounded);
     }
   }
 
@@ -602,19 +602,31 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
         decoration: BoxDecoration(
+          color: Theme.of(context).brightness == Brightness.dark ? null : cs.surface,
           borderRadius: BorderRadius.circular(24),
-          gradient: LinearGradient(
-            colors: [
-              statusColor.withValues(alpha: 0.12),
-              cs.surfaceContainerHighest,
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          gradient: Theme.of(context).brightness == Brightness.dark
+              ? LinearGradient(
+                  colors: [
+                    statusColor.withValues(alpha: 0.18),
+                    cs.surface,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
           border: Border.all(
             color: statusColor.withValues(alpha: 0.25),
             width: 1.5,
           ),
+          boxShadow: Theme.of(context).brightness == Brightness.light
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  )
+                ]
+              : null,
         ),
         child: Column(
           children: [
@@ -828,19 +840,33 @@ class _MedicationReminderCardState extends State<_MedicationReminderCard> {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
+          color: Theme.of(context).brightness == Brightness.dark ? null : cs.surface,
           borderRadius: BorderRadius.circular(24),
-          gradient: LinearGradient(
-            colors: [
-              accentColor.withValues(alpha: 0.10),
-              cs.surfaceContainerHighest,
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          gradient: Theme.of(context).brightness == Brightness.dark
+              ? LinearGradient(
+                  colors: [
+                    accentColor.withValues(alpha: 0.12),
+                    cs.surface,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
           border: Border.all(
-            color: accentColor.withValues(alpha: 0.20),
-            width: 1.5,
+            color: Theme.of(context).brightness == Brightness.dark
+                ? accentColor.withValues(alpha: 0.20)
+                : cs.outline.withValues(alpha: 0.08),
+            width: Theme.of(context).brightness == Brightness.dark ? 1.5 : 1,
           ),
+          boxShadow: Theme.of(context).brightness == Brightness.light
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1077,19 +1103,33 @@ class _HealthCheckCardState extends State<_HealthCheckCard> {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
+          color: Theme.of(context).brightness == Brightness.dark ? null : cs.surface,
           borderRadius: BorderRadius.circular(24),
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFF42A5F5).withValues(alpha: 0.08),
-              cs.surfaceContainerHighest,
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          gradient: Theme.of(context).brightness == Brightness.dark
+              ? LinearGradient(
+                  colors: [
+                    const Color(0xFF42A5F5).withValues(alpha: 0.12),
+                    cs.surface,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
           border: Border.all(
-            color: const Color(0xFF42A5F5).withValues(alpha: 0.18),
-            width: 1.5,
+            color: Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFF42A5F5).withValues(alpha: 0.18)
+                : cs.outline.withValues(alpha: 0.08),
+            width: Theme.of(context).brightness == Brightness.dark ? 1.5 : 1,
           ),
+          boxShadow: Theme.of(context).brightness == Brightness.light
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

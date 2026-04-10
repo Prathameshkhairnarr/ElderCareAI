@@ -100,25 +100,50 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    final primaryColor = isDark ? const Color(0xFF4FC3F7) : const Color(0xFF2E7D32);
+
+    final bgGradient = isDark
+        ? const [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)]
+        : const [Color(0xFFF0FAF4), Color(0xFFE1F5E8), Color(0xFFC8EBD5)];
+    final textPrimary = isDark ? Colors.white : const Color(0xFF11291A);
+    final textSecondary = isDark ? Colors.white.withValues(alpha: 0.6) : const Color(0xFF1A3825).withValues(alpha: 0.7);
+    final cardBg = isDark
+        ? Colors.white.withValues(alpha: 0.05)
+        : Colors.white;
+    final cardBorder = isDark
+        ? Colors.white.withValues(alpha: 0.1)
+        : const Color(0xFFB9DEC8);
+    final inputFill = isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : const Color(0xFFF5FCF8);
+    final inputBorder = isDark
+        ? Colors.white.withValues(alpha: 0.1)
+        : const Color(0xFFC8E6D3);
+    final inputLabelColor = isDark ? Colors.white.withValues(alpha: 0.5) : const Color(0xFF456D55);
+    final iconSuffixColor = isDark ? Colors.white.withValues(alpha: 0.38) : const Color(0xFF679078);
+    final dropdownColor = isDark ? const Color(0xFF16213E) : Colors.white;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('New Account'),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-        titleTextStyle: const TextStyle(
-          color: Colors.white,
+        iconTheme: IconThemeData(color: textPrimary),
+        titleTextStyle: TextStyle(
+          color: textPrimary,
           fontSize: 20,
           fontWeight: FontWeight.bold,
         ),
       ),
-      backgroundColor: const Color(0xFF1A1A2E), // Match login theme
+      backgroundColor: isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF0FAF4),
       extendBodyBehindAppBar: true,
       body: Container(
         height: double.infinity,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)],
+            colors: bgGradient,
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -131,25 +156,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
               child: Column(
                 children: [
                   // Header
-                  const Icon(
+                  Icon(
                     Icons.person_add_outlined,
                     size: 64,
-                    color: Color(0xFF4FC3F7),
+                    color: primaryColor,
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Create Profile',
                     style: TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: textPrimary,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Join ElderCare AI today',
+                    'Join ElderSaathi today',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.6),
+                      color: textSecondary,
                       fontSize: 14,
                     ),
                   ),
@@ -159,11 +184,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.05),
+                      color: cardBg,
                       borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
-                      ),
+                      border: Border.all(color: cardBorder),
+                      boxShadow: isDark
+                          ? null
+                          : [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.06),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
                     ),
                     child: Form(
                       key: _formKey,
@@ -174,6 +206,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             controller: _nameController,
                             label: 'Full Name',
                             icon: Icons.person_rounded,
+                            textColor: textPrimary,
+                            inputFill: inputFill,
+                            inputBorder: inputBorder,
+                            inputLabelColor: inputLabelColor,
+                            primaryColor: primaryColor,
                             validator: (v) =>
                                 v?.isEmpty == true ? 'Required' : null,
                           ),
@@ -184,6 +221,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             icon: Icons.phone_android_rounded,
                             keyboardType: TextInputType.phone,
                             hint: '9876543210',
+                            textColor: textPrimary,
+                            inputFill: inputFill,
+                            inputBorder: inputBorder,
+                            inputLabelColor: inputLabelColor,
+                            primaryColor: primaryColor,
                             validator: (v) {
                               if (v == null || v.isEmpty) return 'Required';
                               if (v.length < 10) return 'Invalid phone';
@@ -197,12 +239,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             icon: Icons.lock_rounded,
                             keyboardType: TextInputType.number,
                             obscureText: _obscurePin,
+                            textColor: textPrimary,
+                            inputFill: inputFill,
+                            inputBorder: inputBorder,
+                            inputLabelColor: inputLabelColor,
+                            primaryColor: primaryColor,
                             suffix: IconButton(
                               icon: Icon(
                                 _obscurePin
                                     ? Icons.visibility_off_rounded
                                     : Icons.visibility_rounded,
-                                color: Colors.white38,
+                                color: iconSuffixColor,
                               ),
                               onPressed: () =>
                                   setState(() => _obscurePin = !_obscurePin),
@@ -224,18 +271,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 firstDate: DateTime(1900),
                                 lastDate: DateTime.now(),
                                 helpText: 'Select Date of Birth',
-                                builder: (ctx, child) {
-                                  return Theme(
-                                    data: Theme.of(ctx).copyWith(
-                                      colorScheme: const ColorScheme.dark(
-                                        primary: Color(0xFF4FC3F7),
-                                        surface: Color(0xFF1A1A2E),
-                                        onPrimary: Colors.black,
-                                      ),
-                                    ),
-                                    child: child!,
-                                  );
-                                },
                               );
                               if (picked != null) {
                                 setState(() => _selectedDob = picked);
@@ -248,19 +283,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 vertical: 16,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.06),
+                                color: inputFill,
                                 borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.1),
-                                ),
+                                border: Border.all(color: inputBorder),
                               ),
                               child: Row(
                                 children: [
-                                  const Icon(
-                                    Icons.cake_rounded,
-                                    color: Color(0xFF4FC3F7),
-                                    size: 20,
-                                  ),
+                                    Icon(
+                                      Icons.cake_rounded,
+                                      color: primaryColor,
+                                      size: 20,
+                                    ),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
@@ -269,15 +302,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                           : 'Date of Birth',
                                       style: TextStyle(
                                         color: _selectedDob != null
-                                            ? Colors.white
-                                            : Colors.white.withValues(alpha: 0.5),
+                                            ? textPrimary
+                                            : inputLabelColor,
                                         fontSize: 14,
                                       ),
                                     ),
                                   ),
                                   Icon(
                                     Icons.calendar_today_rounded,
-                                    color: Colors.white.withValues(alpha: 0.4),
+                                    color: cs.onSurface.withValues(alpha: 0.4),
                                     size: 18,
                                   ),
                                 ],
@@ -289,18 +322,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           // Gender selector
                           DropdownButtonFormField<String>(
                             value: _selectedGender,
-                            dropdownColor: const Color(0xFF16213E),
-                            style: const TextStyle(color: Colors.white),
+                            dropdownColor: dropdownColor,
+                            style: TextStyle(color: textPrimary),
                             decoration: _inputDecoration(
                               label: 'Gender',
                               icon: Icons.person_rounded,
+                              inputFill: inputFill,
+                              inputBorder: inputBorder,
+                              inputLabelColor: inputLabelColor,
+                              primaryColor: primaryColor,
                             ),
                             items: _genders.map((g) {
                               return DropdownMenuItem(
                                 value: g,
                                 child: Text(
                                   g[0].toUpperCase() + g.substring(1),
-                                  style: const TextStyle(color: Colors.white),
+                                  style: TextStyle(color: textPrimary),
                                 ),
                               );
                             }).toList(),
@@ -314,18 +351,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           // Role Selector
                           DropdownButtonFormField<String>(
                             value: _selectedRole,
-                            dropdownColor: const Color(0xFF16213E),
-                            style: const TextStyle(color: Colors.white),
+                            dropdownColor: dropdownColor,
+                            style: TextStyle(color: textPrimary),
                             decoration: _inputDecoration(
                               label: 'I am a...',
                               icon: Icons.groups_rounded,
+                              inputFill: inputFill,
+                              inputBorder: inputBorder,
+                              inputLabelColor: inputLabelColor,
+                              primaryColor: primaryColor,
                             ),
                             items: _roles.map((role) {
                               return DropdownMenuItem(
                                 value: role,
                                 child: Text(
                                   role[0].toUpperCase() + role.substring(1),
-                                  style: const TextStyle(color: Colors.white),
+                                  style: TextStyle(color: textPrimary),
                                 ),
                               );
                             }).toList(),
@@ -353,18 +394,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             child: ElevatedButton(
                               onPressed: _isLoading ? null : _handleRegister,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF4FC3F7),
-                                foregroundColor: const Color(0xFF1A1A2E),
+                                backgroundColor: primaryColor,
+                                foregroundColor: isDark ? const Color(0xFF1A1A2E) : Colors.white,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(14),
                                 ),
                               ),
                               child: _isLoading
-                                  ? const SizedBox(
+                                  ? SizedBox(
                                       width: 24,
                                       height: 24,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2.5,
+                                        color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
                                       ),
                                     )
                                   : const Text(
@@ -393,6 +435,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     required TextEditingController controller,
     required String label,
     required IconData icon,
+    required Color textColor,
+    required Color inputFill,
+    required Color inputBorder,
+    required Color inputLabelColor,
+    required Color primaryColor,
     TextInputType? keyboardType,
     bool obscureText = false,
     Widget? suffix,
@@ -403,13 +450,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
       controller: controller,
       keyboardType: keyboardType,
       obscureText: obscureText,
-      style: const TextStyle(color: Colors.white),
+      style: TextStyle(color: textColor),
       validator: validator,
       decoration: _inputDecoration(
         label: label,
         icon: icon,
         suffix: suffix,
         hint: hint,
+        inputFill: inputFill,
+        inputBorder: inputBorder,
+        inputLabelColor: inputLabelColor,
+        primaryColor: primaryColor,
       ),
     );
   }
@@ -417,29 +468,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
   InputDecoration _inputDecoration({
     required String label,
     required IconData icon,
+    required Color inputFill,
+    required Color inputBorder,
+    required Color inputLabelColor,
+    required Color primaryColor,
     Widget? suffix,
     String? hint,
   }) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
-      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
-      labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
-      prefixIcon: Icon(icon, color: const Color(0xFF4FC3F7), size: 20),
+      hintStyle: TextStyle(color: inputLabelColor.withValues(alpha: 0.6)),
+      labelStyle: TextStyle(color: inputLabelColor),
+      prefixIcon: Icon(icon, color: primaryColor, size: 20),
       suffixIcon: suffix,
       filled: true,
-      fillColor: Colors.white.withValues(alpha: 0.06),
+      fillColor: inputFill,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+        borderSide: BorderSide(color: inputBorder),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: Color(0xFF4FC3F7), width: 1.5),
+        borderSide: BorderSide(color: primaryColor, width: 1.5),
       ),
     );
   }

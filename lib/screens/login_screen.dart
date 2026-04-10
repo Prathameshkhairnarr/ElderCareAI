@@ -66,11 +66,36 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    final primaryColor = isDark ? const Color(0xFF4FC3F7) : const Color(0xFF2E7D32);
+
+    final bgGradient = isDark
+        ? const [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)]
+        : const [Color(0xFFF0FAF4), Color(0xFFE1F5E8), Color(0xFFC8EBD5)];
+    final textPrimary = isDark ? Colors.white : const Color(0xFF11291A);
+    final textSecondary = isDark ? Colors.white.withValues(alpha: 0.6) : const Color(0xFF1A3825).withValues(alpha: 0.7);
+    final cardBg = isDark
+        ? Colors.white.withValues(alpha: 0.07)
+        : Colors.white;
+    final cardBorder = isDark
+        ? Colors.white.withValues(alpha: 0.1)
+        : const Color(0xFFB9DEC8);
+    final inputFill = isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : const Color(0xFFF5FCF8);
+    final inputBorder = isDark
+        ? Colors.white.withValues(alpha: 0.1)
+        : const Color(0xFFC8E6D3);
+    final inputLabelColor = isDark ? Colors.white.withValues(alpha: 0.5) : const Color(0xFF456D55);
+    final dividerColor = isDark ? Colors.white.withValues(alpha: 0.15) : const Color(0xFF11291A).withValues(alpha: 0.12);
+    final iconSuffixColor = isDark ? Colors.white.withValues(alpha: 0.38) : const Color(0xFF679078);
+
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)],
+            colors: bgGradient,
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -98,33 +123,22 @@ class _LoginScreenState extends State<LoginScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       // Logo area
-                      Container(
-                        width: 90,
-                        height: 90,
-                        decoration: BoxDecoration(
-                          color: const Color(
-                            0xFF4FC3F7,
-                          ).withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                            color: const Color(
-                              0xFF4FC3F7,
-                            ).withValues(alpha: 0.3),
-                          ),
-                        ),
-                        child: const Icon(
-                          Icons.health_and_safety_rounded,
-                          size: 48,
-                          color: Color(0xFF4FC3F7),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: Image.asset(
+                          'assets/images/Logo.png',
+                          width: 100,
+                          height: 100,
+                          fit: BoxFit.cover,
                         ),
                       ),
                       const SizedBox(height: 24),
-                      const Text(
-                        'ElderCare AI',
+                      Text(
+                        'ElderSaathi',
                         style: TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                          color: textPrimary,
                           letterSpacing: -0.5,
                         ),
                       ),
@@ -133,7 +147,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         'Smart Protection for Your Loved Ones',
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.white.withValues(alpha: 0.6),
+                          color: textSecondary,
                         ),
                       ),
                       const SizedBox(height: 48),
@@ -142,11 +156,18 @@ class _LoginScreenState extends State<LoginScreen> {
                       Container(
                         padding: const EdgeInsets.all(28),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.07),
+                          color: cardBg,
                           borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.1),
-                          ),
+                          border: Border.all(color: cardBorder),
+                          boxShadow: isDark
+                              ? null
+                              : [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.06),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
                         ),
                         child: Form(
                           key: _formKey,
@@ -158,17 +179,21 @@ class _LoginScreenState extends State<LoginScreen> {
                                 style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w700,
-                                  color: Colors.white.withValues(alpha: 0.9),
+                                  color: textPrimary.withValues(alpha: 0.9),
                                 ),
                               ),
                               const SizedBox(height: 24),
                               TextFormField(
                                 controller: _phoneController,
                                 keyboardType: TextInputType.phone,
-                                style: const TextStyle(color: Colors.white),
+                                style: TextStyle(color: textPrimary),
                                 decoration: _inputDecoration(
                                   label: 'Phone Number',
                                   icon: Icons.phone_android_rounded,
+                                  inputFill: inputFill,
+                                  inputBorder: inputBorder,
+                                  inputLabelColor: inputLabelColor,
+                                  primaryColor: primaryColor,
                                 ),
                                 validator: (v) {
                                   if (v == null || v.isEmpty) return 'Required';
@@ -180,16 +205,20 @@ class _LoginScreenState extends State<LoginScreen> {
                               TextFormField(
                                 controller: _pinController,
                                 obscureText: _obscurePin,
-                                style: const TextStyle(color: Colors.white),
+                                style: TextStyle(color: textPrimary),
                                 decoration: _inputDecoration(
                                   label: 'PIN',
                                   icon: Icons.lock_rounded,
+                                  inputFill: inputFill,
+                                  inputBorder: inputBorder,
+                                  inputLabelColor: inputLabelColor,
+                                  primaryColor: primaryColor,
                                   suffix: IconButton(
                                     icon: Icon(
                                       _obscurePin
                                           ? Icons.visibility_off_rounded
                                           : Icons.visibility_rounded,
-                                      color: Colors.white38,
+                                      color: iconSuffixColor,
                                       size: 20,
                                     ),
                                     onPressed: () => setState(
@@ -218,10 +247,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                     minimumSize: Size.zero,
                                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                   ),
-                                  child: const Text(
+                                  child: Text(
                                     'Forgot PIN?',
                                     style: TextStyle(
-                                      color: Color(0xFF4FC3F7),
+                                      color: primaryColor,
                                       fontWeight: FontWeight.w600,
                                       fontSize: 13,
                                     ),
@@ -263,20 +292,20 @@ class _LoginScreenState extends State<LoginScreen> {
                                 child: ElevatedButton(
                                   onPressed: _isLoading ? null : _login,
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF4FC3F7),
-                                    foregroundColor: const Color(0xFF1A1A2E),
+                                    backgroundColor: primaryColor,
+                                    foregroundColor: isDark ? const Color(0xFF1A1A2E) : Colors.white,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(14),
                                     ),
                                     elevation: 0,
                                   ),
                                   child: _isLoading
-                                      ? const SizedBox(
+                                      ? SizedBox(
                                           width: 22,
                                           height: 22,
                                           child: CircularProgressIndicator(
                                             strokeWidth: 2.5,
-                                            color: Color(0xFF1A1A2E),
+                                            color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
                                           ),
                                         )
                                       : const Text(
@@ -292,11 +321,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               Row(
                                 children: [
                                   Expanded(
-                                    child: Divider(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.15,
-                                      ),
-                                    ),
+                                    child: Divider(color: dividerColor),
                                   ),
                                   Padding(
                                     padding: const EdgeInsets.symmetric(
@@ -305,20 +330,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                     child: Text(
                                       'OR',
                                       style: TextStyle(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.4,
-                                        ),
+                                        color: cs.onSurface.withValues(alpha: 0.4),
                                         fontSize: 12,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ),
                                   Expanded(
-                                    child: Divider(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.15,
-                                      ),
-                                    ),
+                                    child: Divider(color: dividerColor),
                                   ),
                                 ],
                               ),
@@ -345,11 +364,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                   ),
                                   style: OutlinedButton.styleFrom(
-                                    foregroundColor: const Color(0xFF4FC3F7),
+                                    foregroundColor: primaryColor,
                                     side: BorderSide(
-                                      color: const Color(
-                                        0xFF4FC3F7,
-                                      ).withValues(alpha: 0.5),
+                                      color: primaryColor.withValues(alpha: 0.5),
                                       width: 1.5,
                                     ),
                                     shape: RoundedRectangleBorder(
@@ -376,26 +393,30 @@ class _LoginScreenState extends State<LoginScreen> {
   InputDecoration _inputDecoration({
     required String label,
     required IconData icon,
+    required Color inputFill,
+    required Color inputBorder,
+    required Color inputLabelColor,
+    required Color primaryColor,
     Widget? suffix,
   }) {
     return InputDecoration(
       labelText: label,
-      labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
-      prefixIcon: Icon(icon, color: const Color(0xFF4FC3F7), size: 20),
+      labelStyle: TextStyle(color: inputLabelColor),
+      prefixIcon: Icon(icon, color: primaryColor, size: 20),
       suffixIcon: suffix,
       filled: true,
-      fillColor: Colors.white.withValues(alpha: 0.06),
+      fillColor: inputFill,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+        borderSide: BorderSide(color: inputBorder),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: Color(0xFF4FC3F7), width: 1.5),
+        borderSide: BorderSide(color: primaryColor, width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),

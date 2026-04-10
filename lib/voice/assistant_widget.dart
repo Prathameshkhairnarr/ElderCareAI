@@ -157,6 +157,7 @@ class _AssistantWidgetState extends State<AssistantWidget>
   }
 
   Widget _buildMicButton() {
+    final primaryColor = Theme.of(context).colorScheme.primary;
     Color bgColor;
     IconData icon;
 
@@ -180,7 +181,7 @@ class _AssistantWidgetState extends State<AssistantWidget>
       default:
         bgColor = _controller.isConversationActive
             ? const Color(0xFF66BB6A)
-            : const Color(0xFF4FC3F7);
+            : primaryColor;
         icon = _controller.isConversationActive
             ? Icons.chat_rounded
             : Icons.mic_rounded;
@@ -333,10 +334,10 @@ class _ResponseSheet extends StatelessWidget {
           if (response.isNotEmpty) ...[
             Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.smart_toy_rounded,
                   size: 18,
-                  color: Color(0xFF4FC3F7),
+                  color: cs.primary,
                 ),
                 const SizedBox(width: 8),
                 Text(
@@ -344,7 +345,7 @@ class _ResponseSheet extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: const Color(0xFF4FC3F7).withValues(alpha: 0.8),
+                    color: cs.primary.withValues(alpha: 0.8),
                   ),
                 ),
               ],
@@ -354,10 +355,10 @@ class _ResponseSheet extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFF4FC3F7).withValues(alpha: 0.08),
+                color: cs.primary.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: const Color(0xFF4FC3F7).withValues(alpha: 0.15),
+                  color: cs.primary.withValues(alpha: 0.15),
                 ),
               ),
               child: Text(

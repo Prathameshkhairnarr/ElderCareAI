@@ -107,6 +107,13 @@ void main() {
         AppLogger.error(LogCategory.auth, 'AuthService Init Failed: $e');
       }
 
+      // Load settings (theme) BEFORE running the app to avoid wrong theme flash
+      try {
+        await SettingsService().init().timeout(const Duration(seconds: 3));
+      } catch (e) {
+        AppLogger.warn(LogCategory.lifecycle, 'Early SettingsService Init Failed: $e');
+      }
+
       unawaited(_runAsyncInitializations());
 
       final auth = AuthService();
@@ -140,11 +147,7 @@ Future<void> _initNonCriticalServices() async {
     AppLogger.warn(LogCategory.shake, 'ShakeDetector Init Failed: $e');
   }
 
-  try {
-    await SettingsService().init().timeout(const Duration(seconds: 5));
-  } catch (e) {
-    AppLogger.warn(LogCategory.lifecycle, 'SettingsService Init Failed: $e');
-  }
+
 
   // Permissions (non-blocking)
   // Notifications and location are now handled in the master batch.
@@ -179,7 +182,7 @@ class ElderCareApp extends StatelessWidget {
       animation: SettingsService(),
       builder: (context, child) {
         return MaterialApp(
-          title: 'ElderCare AI',
+          title: 'ElderSaathi',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
