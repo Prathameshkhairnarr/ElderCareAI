@@ -17,12 +17,19 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    
+    final bgGradient = isDark
+        ? const [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)]
+        : [cs.surface, cs.surfaceContainerHighest.withValues(alpha: 0.3), cs.surface];
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Emergency Contacts'),
+        title: Text('Emergency Contacts', style: TextStyle(color: cs.onSurface)),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: cs.onSurface),
         actions: [
           IconButton(
             icon: const Icon(Icons.person_add_rounded),
@@ -30,11 +37,11 @@ class _ContactsScreenState extends State<ContactsScreen> {
           ),
         ],
       ),
-      backgroundColor: const Color(0xFF1A1A2E), // dashboard theme
+      backgroundColor: isDark ? const Color(0xFF1A1A2E) : cs.surface,
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)],
+            colors: bgGradient,
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -52,13 +59,13 @@ class _ContactsScreenState extends State<ContactsScreen> {
                     Icon(
                       Icons.people_outline_rounded,
                       size: 80,
-                      color: Colors.white.withValues(alpha: 0.2),
+                      color: cs.onSurface.withValues(alpha: 0.2),
                     ),
                     const SizedBox(height: 16),
                     Text(
                       'No Emergency Contacts',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: cs.onSurface.withValues(alpha: 0.5),
                         fontSize: 18,
                         fontWeight: FontWeight.w500,
                       ),
@@ -67,7 +74,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                     Text(
                       'Add people to notify during SOS',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.3),
+                        color: cs.onSurface.withValues(alpha: 0.3),
                         fontSize: 14,
                       ),
                     ),
@@ -77,8 +84,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
                       icon: const Icon(Icons.add),
                       label: const Text('Add Contact'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4FC3F7),
-                        foregroundColor: const Color(0xFF1A1A2E),
+                        backgroundColor: cs.primary,
+                        foregroundColor: isDark ? const Color(0xFF1A1A2E) : Colors.white,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 24,
                           vertical: 12,
@@ -106,24 +113,26 @@ class _ContactsScreenState extends State<ContactsScreen> {
                   },
                   child: Card(
                     margin: const EdgeInsets.only(bottom: 12),
-                    color: Colors.white.withValues(alpha: 0.08),
+                    color: isDark ? Colors.white.withValues(alpha: 0.08) : cs.surface,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                       side: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: isDark ? Colors.white.withValues(alpha: 0.1) : cs.outline.withValues(alpha: 0.1),
                       ),
                     ),
+                    elevation: isDark ? 0 : 2,
+                    shadowColor: Colors.black.withValues(alpha: 0.05),
                     child: ListTile(
                       contentPadding: const EdgeInsets.all(16),
                       leading: CircleAvatar(
                         radius: 24,
-                        backgroundColor: _getColor(contact.colorIndex),
+                        backgroundColor: _getColor(contact.colorIndex).withValues(alpha: 0.2),
                         child: Text(
                           contact.name.isNotEmpty
                               ? contact.name[0].toUpperCase()
                               : '?',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: _getColor(contact.colorIndex),
                             fontWeight: FontWeight.bold,
                             fontSize: 20,
                           ),
@@ -131,8 +140,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
                       ),
                       title: Text(
                         contact.name,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: cs.onSurface,
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
                         ),
@@ -146,19 +155,19 @@ class _ContactsScreenState extends State<ContactsScreen> {
                               Icon(
                                 Icons.phone_rounded,
                                 size: 14,
-                                color: Colors.white.withValues(alpha: 0.6),
+                                color: cs.onSurface.withValues(alpha: 0.6),
                               ),
                               const SizedBox(width: 4),
                               Text(
                                 contact.phone,
                                 style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.8),
+                                  color: cs.onSurface.withValues(alpha: 0.8),
                                   fontSize: 15,
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
@@ -231,17 +240,18 @@ class _ContactsScreenState extends State<ContactsScreen> {
     BuildContext context,
     EmergencyContact contact,
   ) async {
+    final cs = Theme.of(context).colorScheme;
     return showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF16213E),
-        title: const Text(
+        backgroundColor: cs.surface,
+        title: Text(
           'Remove Contact?',
-          style: TextStyle(color: Colors.white),
+          style: TextStyle(color: cs.onSurface),
         ),
         content: Text(
           'Remove ${contact.name} from emergency contacts?',
-          style: const TextStyle(color: Colors.white70),
+          style: TextStyle(color: cs.onSurface.withValues(alpha: 0.7)),
         ),
         actions: [
           TextButton(
@@ -349,11 +359,9 @@ class _AddContactDialogState extends State<AddContactDialog> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF16213E),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (context) {
+        final cs = Theme.of(context).colorScheme;
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setModalState) {
             final filteredContacts = contacts.where((c) {
@@ -369,84 +377,90 @@ class _AddContactDialogState extends State<AddContactDialog> {
               minChildSize: 0.5,
               expand: false,
               builder: (context, scrollController) {
-                return Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Select Contact',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          CloseButton(color: Colors.white, onPressed: () => Navigator.pop(context)),
-                        ],
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                      child: TextField(
-                        style: const TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          hintText: 'Search by name or number...',
-                          hintStyle: const TextStyle(color: Colors.white54),
-                          prefixIcon: const Icon(Icons.search, color: Color(0xFF4FC3F7)),
-                          filled: true,
-                          fillColor: Colors.white.withValues(alpha: 0.05),
-                          contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                        ),
-                        onChanged: (value) {
-                          setModalState(() {
-                            searchQuery = value;
-                          });
-                        },
-                      ),
-                    ),
-                    Expanded(
-                      child: filteredContacts.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'No contacts found.',
-                                style: TextStyle(color: Colors.white54),
+                return Container(
+                  decoration: BoxDecoration(
+                    color: cs.surface,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  ),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Select Contact',
+                              style: TextStyle(
+                                color: cs.onSurface,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
                               ),
-                            )
-                          : ListView.builder(
-                              controller: scrollController,
-                              itemCount: filteredContacts.length,
-                              itemBuilder: (context, index) {
-                                final c = filteredContacts[index];
-                                
-                                return ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: const Color(0xFF4FC3F7),
-                                    child: Text(
-                                      c.displayName.isNotEmpty ? c.displayName[0].toUpperCase() : '?',
-                                      style: const TextStyle(color: Color(0xFF16213E), fontWeight: FontWeight.bold),
-                                    ),
-                                  ),
-                                  title: Text(c.displayName, style: const TextStyle(color: Colors.white)),
-                                  subtitle: Text(c.phones.first.number, style: const TextStyle(color: Colors.white54)),
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    setState(() {
-                                      _nameCtrl.text = c.displayName;
-                                      _phoneCtrl.text = c.phones.first.number;
-                                    });
-                                  },
-                                );
-                              },
                             ),
-                    ),
-                  ],
+                            CloseButton(color: cs.onSurface, onPressed: () => Navigator.pop(context)),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                        child: TextField(
+                          style: TextStyle(color: cs.onSurface),
+                          decoration: InputDecoration(
+                            hintText: 'Search by name or number...',
+                            hintStyle: TextStyle(color: cs.onSurface.withValues(alpha: 0.54)),
+                            prefixIcon: Icon(Icons.search, color: cs.primary),
+                            filled: true,
+                            fillColor: cs.onSurface.withValues(alpha: 0.05),
+                            contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          onChanged: (value) {
+                            setModalState(() {
+                              searchQuery = value;
+                            });
+                          },
+                        ),
+                      ),
+                      Expanded(
+                        child: filteredContacts.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No contacts found.',
+                                  style: TextStyle(color: cs.onSurface.withValues(alpha: 0.54)),
+                                ),
+                              )
+                            : ListView.builder(
+                                controller: scrollController,
+                                itemCount: filteredContacts.length,
+                                itemBuilder: (context, index) {
+                                  final c = filteredContacts[index];
+                                  
+                                  return ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: cs.primary,
+                                      child: Text(
+                                        c.displayName.isNotEmpty ? c.displayName[0].toUpperCase() : '?',
+                                        style: TextStyle(color: cs.surface, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                    title: Text(c.displayName, style: TextStyle(color: cs.onSurface)),
+                                    subtitle: Text(c.phones.first.number, style: TextStyle(color: cs.onSurface.withValues(alpha: 0.54))),
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      setState(() {
+                                        _nameCtrl.text = c.displayName;
+                                        _phoneCtrl.text = c.phones.first.number;
+                                      });
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
                 );
               },
             );
@@ -491,15 +505,18 @@ class _AddContactDialogState extends State<AddContactDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+
     return AlertDialog(
-      backgroundColor: const Color(0xFF16213E),
+      backgroundColor: cs.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text('New Contact', style: TextStyle(color: Colors.white)),
+          Text('New Contact', style: TextStyle(color: cs.onSurface)),
           IconButton(
-            icon: const Icon(Icons.contacts_rounded, color: Color(0xFF4FC3F7)),
+            icon: Icon(Icons.contacts_rounded, color: cs.primary),
             onPressed: _pickContact,
             tooltip: 'Pick from Phonebook',
           ),
@@ -516,14 +533,14 @@ class _AddContactDialogState extends State<AddContactDialog> {
                 onTap: _pickImage,
                 child: CircleAvatar(
                   radius: 40,
-                  backgroundColor: Colors.white.withValues(alpha: 0.1),
+                  backgroundColor: cs.onSurface.withValues(alpha: 0.1),
                   backgroundImage: _imageFile != null
                       ? FileImage(_imageFile!)
                       : null,
                   child: _imageFile == null
-                      ? const Icon(
+                      ? Icon(
                           Icons.add_a_photo,
-                          color: Colors.white54,
+                          color: cs.onSurface.withValues(alpha: 0.5),
                           size: 30,
                         )
                       : null,
@@ -533,24 +550,24 @@ class _AddContactDialogState extends State<AddContactDialog> {
 
               TextFormField(
                 controller: _nameCtrl,
-                style: const TextStyle(color: Colors.white),
-                decoration: _inputDeco('Full Name', Icons.person),
+                style: TextStyle(color: cs.onSurface),
+                decoration: _inputDeco('Full Name', Icons.person, cs),
                 validator: (v) => v?.isEmpty == true ? 'Required' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _phoneCtrl,
-                style: const TextStyle(color: Colors.white),
-                decoration: _inputDeco('Phone Number', Icons.phone),
+                style: TextStyle(color: cs.onSurface),
+                decoration: _inputDeco('Phone Number', Icons.phone, cs),
                 keyboardType: TextInputType.phone,
                 validator: (v) => v?.isEmpty == true ? 'Required' : null,
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: _relationship,
-                dropdownColor: const Color(0xFF16213E),
-                style: const TextStyle(color: Colors.white),
-                decoration: _inputDeco('Relationship', Icons.people),
+                dropdownColor: cs.surface,
+                style: TextStyle(color: cs.onSurface),
+                decoration: _inputDeco('Relationship', Icons.people, cs),
                 items: _relationships
                     .map((r) => DropdownMenuItem(value: r, child: Text(r)))
                     .toList(),
@@ -563,26 +580,26 @@ class _AddContactDialogState extends State<AddContactDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          child: Text('Cancel', style: TextStyle(color: cs.onSurface.withValues(alpha: 0.5))),
         ),
         ElevatedButton(
           onPressed: _save,
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF4FC3F7),
+            backgroundColor: cs.primary,
           ),
-          child: const Text('Save', style: TextStyle(color: Color(0xFF1A1A2E))),
+          child: Text('Save', style: TextStyle(color: isDark ? const Color(0xFF1A1A2E) : Colors.white)),
         ),
       ],
     );
   }
 
-  InputDecoration _inputDeco(String label, IconData icon) {
+  InputDecoration _inputDeco(String label, IconData icon, ColorScheme cs) {
     return InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(color: Colors.white54),
-      prefixIcon: Icon(icon, color: const Color(0xFF4FC3F7), size: 20),
+      labelStyle: TextStyle(color: cs.onSurface.withValues(alpha: 0.5)),
+      prefixIcon: Icon(icon, color: cs.primary, size: 20),
       filled: true,
-      fillColor: Colors.white.withValues(alpha: 0.05),
+      fillColor: cs.onSurface.withValues(alpha: 0.05),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,

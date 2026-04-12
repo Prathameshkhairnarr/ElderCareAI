@@ -53,7 +53,7 @@ class _HealthProfileCardState extends State<HealthProfileCard> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final profile = _service.profile;
-    const accent = Color(0xFF7C4DFF); // purple accent
+    const accent = Color(0xFF7C4DFF); // Purple accent for Health Profile
 
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
@@ -69,16 +69,33 @@ class _HealthProfileCardState extends State<HealthProfileCard> {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
+          color: Theme.of(context).brightness == Brightness.dark ? null : cs.surface,
           borderRadius: BorderRadius.circular(24),
-          gradient: LinearGradient(
-            colors: [
-              accent.withValues(alpha: 0.10),
-              cs.surfaceContainerHighest,
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+          gradient: Theme.of(context).brightness == Brightness.dark
+              ? LinearGradient(
+                  colors: [
+                    accent.withValues(alpha: 0.12),
+                    cs.surface,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          border: Border.all(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? accent.withValues(alpha: 0.20)
+                : cs.outline.withValues(alpha: 0.08),
+            width: Theme.of(context).brightness == Brightness.dark ? 1.5 : 1,
           ),
-          border: Border.all(color: accent.withValues(alpha: 0.20), width: 1.5),
+          boxShadow: Theme.of(context).brightness == Brightness.light
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -306,13 +323,14 @@ class _HealthProfileCardState extends State<HealthProfileCard> {
     required ColorScheme cs,
     bool fullWidth = false,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: fullWidth ? double.infinity : null,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+        color: color.withValues(alpha: isDark ? 0.18 : 0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: 0.12)),
+        border: Border.all(color: color.withValues(alpha: isDark ? 0.25 : 0.12)),
       ),
       child: Row(
         children: [
@@ -354,14 +372,15 @@ class _HealthProfileCardState extends State<HealthProfileCard> {
     final bmi = profile.bmi!;
     final color = _bmiColor(bmi);
     final category = profile.bmiCategory;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+        color: color.withValues(alpha: isDark ? 0.18 : 0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: 0.15)),
+        border: Border.all(color: color.withValues(alpha: isDark ? 0.25 : 0.15)),
       ),
       child: Row(
         children: [

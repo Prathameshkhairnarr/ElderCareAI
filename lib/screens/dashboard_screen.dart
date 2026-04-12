@@ -316,18 +316,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               width: 42,
                               height: 42,
                               decoration: BoxDecoration(
-                                gradient: const LinearGradient(
+                                gradient: LinearGradient(
                                   colors: [
-                                    Color(0xFF4FC3F7),
-                                    Color(0xFF0288D1),
+                                    Theme.of(context).colorScheme.primary,
+                                    Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
                                   ],
                                 ),
                                 borderRadius: BorderRadius.circular(14),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: const Color(
-                                      0xFF4FC3F7,
-                                    ).withValues(alpha: 0.3),
+                                    color: Theme.of(context).colorScheme.primary
+                                        .withValues(alpha: 0.3),
                                     blurRadius: 8,
                                     offset: const Offset(0, 2),
                                   ),
@@ -372,17 +371,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(
-                                0xFF4FC3F7,
-                              ).withValues(alpha: 0.15),
+                              color: Theme.of(context).colorScheme.primary
+                                  .withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
                               user?.role.name.toUpperCase() ?? 'USER',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
-                                color: Color(0xFF4FC3F7),
+                                color: Theme.of(context).colorScheme.primary,
                                 letterSpacing: 1,
                               ),
                             ),
