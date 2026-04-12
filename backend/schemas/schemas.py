@@ -59,6 +59,9 @@ class ProfilePhotoRequest(BaseModel):
 
 class SmsRequest(BaseModel):
     message: str = Field(..., min_length=1)
+    sender: Optional[str] = None
+    timestamp: Optional[datetime] = None
+    is_repeated: bool = False
 
 
 class SmsResponse(BaseModel):

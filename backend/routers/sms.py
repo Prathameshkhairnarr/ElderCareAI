@@ -93,7 +93,12 @@ def analyze_sms_endpoint(
         return response
 
     # ── New analysis ──
-    result = analyze_sms(body.message)
+    metadata = {
+        "sender": body.sender,
+        "timestamp": body.timestamp,
+        "is_repeated": body.is_repeated,
+    }
+    result = analyze_sms(body.message, metadata)
 
     record = SmsAnalysis(
         user_id=current_user.id,
