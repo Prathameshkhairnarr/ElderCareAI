@@ -47,3 +47,10 @@ app.*.map.json
 backend/service-account.json
 .env
 .env.*
+
+# Test files with secrets — never commit
+test_api.dart
+test_models.dart
+test_quota.dart
+test_ml_model.py
+scratch/
