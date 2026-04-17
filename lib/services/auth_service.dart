@@ -59,7 +59,7 @@ class UserProfile {
   };
 }
 
-enum UserRole { elder, guardian, admin }
+enum UserRole { elder, guardian, child, admin }
 
 class AuthService {
   // ── Singleton ────────────────────────────────────────

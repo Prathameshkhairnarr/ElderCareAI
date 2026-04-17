@@ -65,4 +65,30 @@ class SmsModel {
       isResolved: json['is_resolved'] as bool? ?? false,
     );
   }
+
+  /// Serialize to JSON for local storage
+  Map<String, dynamic> toJson() {
+    return {
+      'sender': sender,
+      'body': body,
+      'riskScore': riskScore,
+      'category': category,
+      'isFraud': isFraud,
+      'explanation': explanation,
+      'isResolved': isResolved,
+    };
+  }
+
+  /// Create from locally cached JSON (SharedPreferences)
+  factory SmsModel.fromLocal(Map<String, dynamic> json) {
+    return SmsModel(
+      sender: json['sender'] as String? ?? 'Unknown',
+      body: json['body'] as String? ?? '',
+      riskScore: (json['riskScore'] as num?)?.toDouble() ?? 0,
+      category: json['category'] as String? ?? 'unknown',
+      isFraud: json['isFraud'] as bool? ?? false,
+      explanation: json['explanation'] as String? ?? '',
+      isResolved: json['isResolved'] as bool? ?? false,
+    );
+  }
 }

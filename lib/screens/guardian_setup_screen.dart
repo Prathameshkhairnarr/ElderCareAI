@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:math';
 import '../models/guardian_model.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
@@ -10,27 +13,30 @@ class GuardianSetupScreen extends StatefulWidget {
   State<GuardianSetupScreen> createState() => _GuardianSetupScreenState();
 }
 
-class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
-  final _formKey   = GlobalKey<FormState>();
-  final _nameCon   = TextEditingController();
-  final _phoneCon  = TextEditingController();
-  final _emailCon  = TextEditingController();
-  bool _isLoading  = false;
-  bool _isPrimary  = false;
+class _GuardianSetupScreenState extends State<GuardianSetupScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  bool _isLoading = false;
   List<GuardianModel> _guardians = [];
-  final ApiService _apiService   = ApiService();
+  final ApiService _apiService = ApiService();
+  late SharedPreferences _prefs;
 
-  // ── Theme tokens ──────────────────────────────────────────────────────────
-  static const _bg      = Color(0xFF0D0F1F);
+  // Local preferences cache map for privacy toggles: guardianId -> permissions
+  final Map<int, Map<String, bool>> _guardianPrefs = {};
+
+  final List<Map<String, String>> _activityLog = [
+    {"time": "Just now", "msg": "System: Guardian setup initialized."},
+  ];
+
+  // ── Theme tokens ──
+  static const _bg = Color(0xFF0D0F1F);
   static const _surface = Color(0xFF1A1D2E);
-  static const _blue    = Color(0xFF3B82F6);
+  static const _blue = Color(0xFF3B82F6);
   static const _textPri = Colors.white;
   static const _textSec = Color(0xFFB0B3C1);
-  static const _green   = Color(0xFF22C55E);
-  static const _amber   = Color(0xFFF59E0B);
-  static const _red     = Color(0xFFEF4444);
+  static const _green = Color(0xFF22C55E);
+  static const _amber = Color(0xFFF59E0B);
+  static const _red = Color(0xFFEF4444);
 
-  // Avatar color cycle for guardian list
   static const _avatarColors = [
     Color(0xFF3B82F6),
     Color(0xFF8B5CF6),
@@ -43,89 +49,67 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
   @override
   void initState() {
     super.initState();
-    _loadGuardians();
+    _tabController = TabController(length: 3, vsync: this);
+    _initData();
+  }
+
+  Future<void> _initData() async {
+    _prefs = await SharedPreferences.getInstance();
+    await _loadGuardians();
   }
 
   @override
   void dispose() {
-    _nameCon.dispose();
-    _phoneCon.dispose();
-    _emailCon.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
   Future<void> _loadGuardians() async {
     setState(() => _isLoading = true);
     final guardians = await _apiService.getGuardians();
+    
+    for (var g in guardians) {
+      _guardianPrefs[g.id] = {
+        'location': _prefs.getBool('g_${g.id}_loc') ?? true,
+        'health': _prefs.getBool('g_${g.id}_health') ?? false,
+        'sos': _prefs.getBool('g_${g.id}_sos') ?? true,
+      };
+    }
+
+    // Mock an activity log
+    if (guardians.isNotEmpty) {
+      _activityLog.insert(0, {
+        "time": "2 mins ago",
+        "msg": "${guardians.first.name} was pinged for device sync."
+      });
+    }
+
+    if (mounted) {
+      setState(() {
+        _guardians = guardians;
+        // Sort primary first
+        _guardians.sort((a, b) => (b.isPrimary ? 1 : 0).compareTo(a.isPrimary ? 1 : 0));
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _updatePref(int guardianId, String key, bool value) async {
+    await _prefs.setBool('g_${guardianId}_$key', value);
     setState(() {
-      _guardians = guardians;
-      _isLoading = false;
+      _guardianPrefs[guardianId]![key] = value;
     });
+    final gName = _guardians.firstWhere((g) => g.id == guardianId).name;
+    _addLog("Privacy settings updated for $gName");
   }
 
-  Future<void> _addGuardian() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _isLoading = true);
-
-    final normalizedPhone = AuthService.normalizePhone(_phoneCon.text);
-    final newGuardian = await _apiService.addGuardian(
-      _nameCon.text,
-      normalizedPhone,
-      email: _emailCon.text.isNotEmpty ? _emailCon.text : null,
-    );
-
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-
-    if (newGuardian != null) {
-      _nameCon.clear();
-      _phoneCon.clear();
-      _emailCon.clear();
-      setState(() => _isPrimary = false);
-      _loadGuardians();
-      _snack('Guardian added successfully', _green);
-    } else {
-      _snack('Failed to add guardian', _red);
-    }
-  }
-
-  Future<void> _deleteGuardian(int id, String name) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Remove Guardian',
-          style: TextStyle(color: _textPri, fontWeight: FontWeight.w700),
-        ),
-        content: Text(
-          'Remove $name? They won\'t receive alerts anymore.',
-          style: const TextStyle(color: _textSec),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: _textSec)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Remove', style: TextStyle(color: _red)),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-
-    setState(() => _isLoading = true);
-    final success = await _apiService.deleteGuardian(id);
-    if (!mounted) return;
-    if (success) {
-      _loadGuardians();
-    } else {
-      setState(() => _isLoading = false);
-      _snack('Failed to remove guardian', _red);
-    }
+  void _addLog(String msg) {
+    setState(() {
+      _activityLog.insert(0, {
+        "time": "Just now",
+        "msg": msg
+      });
+    });
   }
 
   void _snack(String msg, Color color) {
@@ -140,410 +124,170 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
     );
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _bg,
-      appBar: AppBar(
-        backgroundColor: _bg,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: _textSec),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'Manage Guardians',
-          style: TextStyle(
-            color: _textPri,
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-      body: _isLoading && _guardians.isEmpty
-          ? const Center(child: CircularProgressIndicator(color: _blue, strokeWidth: 2.5))
-          : SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+  void _sendSafePing() {
+    HapticFeedback.mediumImpact();
+    _snack("Safe ping sent to all Guardians!", _green);
+    _addLog("You sent an 'I am Safe' ping.");
+  }
+
+  void _inviteChildApp() {
+    // Show mock dialog
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Invite to Guardian App', style: TextStyle(color: _textPri)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Your guardians can download the Child Profile App to monitor your safety automatically.',
+              style: TextStyle(color: _textSec, fontSize: 13),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: _bg, borderRadius: BorderRadius.circular(12)),
+              child: const Row(
                 children: [
-                  _buildInfoBanner(),
-                  const SizedBox(height: 24),
-                  _buildFormCard(),
-                  const SizedBox(height: 28),
-                  _buildGuardianList(),
+                  Icon(Icons.link_rounded, color: _blue, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(child: Text("https://eldercare.app/invite/123", style: TextStyle(color: _blue, fontSize: 13, decoration: TextDecoration.underline))),
                 ],
               ),
             ),
-    );
-  }
-
-  // ── Info banner ───────────────────────────────────────────────────────────
-  Widget _buildInfoBanner() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: _blue.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _blue.withOpacity(0.25)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.info_outline_rounded, color: _blue.withOpacity(0.9), size: 18),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Text(
-              'Guardians get instant SOS pings and scam threat alerts.',
-              style: TextStyle(color: Color(0xFF93C5FD), fontSize: 13, height: 1.4),
-            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close', style: TextStyle(color: _textSec)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _snack("Invite link copied!", _blue);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: _blue),
+            child: const Text('Copy Link', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
-  // ── Add guardian form ─────────────────────────────────────────────────────
-  Widget _buildFormCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withOpacity(0.07)),
-      ),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'Add New Guardian',
-              style: TextStyle(
-                color: _textPri,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Name
-            _formField(
-              controller: _nameCon,
-              label: 'Full Name',
-              icon: Icons.person_rounded,
-              validator: (v) => v!.trim().isEmpty ? 'Enter a name' : null,
-            ),
-            const SizedBox(height: 14),
-
-            // Phone
-            _formField(
-              controller: _phoneCon,
-              label: 'Phone Number',
-              icon: Icons.phone_rounded,
-              keyboard: TextInputType.phone,
-              validator: (v) => (v ?? '').length < 10 ? 'Enter valid phone' : null,
-            ),
-            const SizedBox(height: 14),
-
-            // Email
-            _formField(
-              controller: _emailCon,
-              label: 'Email (Optional)',
-              icon: Icons.email_rounded,
-              keyboard: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 16),
-
-            // Primary guardian toggle
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: _bg,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withOpacity(0.07)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: BoxDecoration(
-                      color: _amber.withOpacity(0.14),
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: const Icon(Icons.star_rounded, size: 16, color: _amber),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Primary Guardian',
-                          style: TextStyle(
-                            color: _textPri,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          'Notified first in emergencies',
-                          style: TextStyle(color: _textSec, fontSize: 11),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Switch(
-                    value: _isPrimary,
-                    onChanged: (v) => setState(() => _isPrimary = v),
-                    activeColor: _blue,
-                    activeTrackColor: _blue.withOpacity(0.3),
-                    inactiveTrackColor: Colors.white.withOpacity(0.1),
-                    inactiveThumbColor: _textSec,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Submit button
-            SizedBox(
-              height: 50,
-              child: ElevatedButton.icon(
-                onPressed: _isLoading ? null : _addGuardian,
-                icon: _isLoading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.person_add_rounded, size: 18),
-                label: Text(
-                  _isLoading ? 'Adding...' : 'Add Guardian',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _blue,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: _blue.withOpacity(0.4),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Guardian list ─────────────────────────────────────────────────────────
-  Widget _buildGuardianList() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Header
-        Row(
-          children: [
-            const Text(
-              'Your Guardians',
-              style: TextStyle(
-                color: _textPri,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: _blue.withOpacity(0.18),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '${_guardians.length}',
-                style: const TextStyle(
-                  color: _blue,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-
-        // Empty state
-        if (_guardians.isEmpty)
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 32),
-            decoration: BoxDecoration(
-              color: _surface,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withOpacity(0.06)),
-            ),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.group_add_rounded,
-                  size: 40,
-                  color: _textSec.withOpacity(0.4),
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'No guardians added yet',
-                  style: TextStyle(color: _textSec, fontSize: 14),
-                ),
-              ],
-            ),
-          )
-        else
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _guardians.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
-            itemBuilder: (_, i) => _buildGuardianTile(_guardians[i], i),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildGuardianTile(GuardianModel g, int index) {
-    final color = _avatarColors[index % _avatarColors.length];
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: g.isPrimary
-              ? _amber.withOpacity(0.4)
-              : Colors.white.withOpacity(0.07),
-        ),
-      ),
-      child: Row(
-        children: [
-          // Colored avatar
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: color.withOpacity(0.14),
-            ),
-            child: Center(
-              child: Text(
-                g.name.isNotEmpty ? g.name[0].toUpperCase() : 'G',
-                style: TextStyle(
-                  color: color,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-
-          // Info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        g.name,
-                        style: const TextStyle(
-                          color: _textPri,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (g.isPrimary) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: _amber.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text(
-                          'Primary',
-                          style: TextStyle(
-                            color: _amber,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Row(
-                  children: [
-                    const Icon(Icons.phone_rounded, size: 11, color: _textSec),
-                    const SizedBox(width: 4),
-                    Text(
-                      g.phone,
-                      style: const TextStyle(color: _textSec, fontSize: 12),
-                    ),
-                  ],
-                ),
-                if (g.email != null && g.email!.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      const Icon(Icons.email_rounded, size: 11, color: _textSec),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          g.email!,
-                          style: const TextStyle(color: _textSec, fontSize: 11),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-
-          // Delete
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, color: _red, size: 20),
-            onPressed: () => _deleteGuardian(g.id, g.name),
-            splashRadius: 20,
-          ),
+  Future<void> _deleteGuardian(int id, String name) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Remove Guardian', style: TextStyle(color: _textPri, fontWeight: FontWeight.w700)),
+        content: Text('Remove $name? They won\'t receive alerts anymore.', style: const TextStyle(color: _textSec)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel', style: TextStyle(color: _textSec))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove', style: TextStyle(color: _red))),
         ],
       ),
     );
+    if (confirm != true) return;
+
+    setState(() => _isLoading = true);
+    final success = await _apiService.deleteGuardian(id);
+    if (success) {
+      _addLog("Guardian $name removed.");
+      _loadGuardians();
+    } else {
+      setState(() => _isLoading = false);
+      _snack('Failed to remove guardian', _red);
+    }
   }
 
-  // ── Reusable form field ───────────────────────────────────────────────────
-  Widget _formField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    TextInputType? keyboard,
-    String? Function(String?)? validator,
-  }) {
+  void _showAddGuardianSheet() {
+    final formKey = GlobalKey<FormState>();
+    final nameCon = TextEditingController();
+    final phoneCon = TextEditingController();
+    final emailCon = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setSheetState) {
+            bool sheetLoading = false;
+
+            Future<void> add() async {
+              if (!formKey.currentState!.validate()) return;
+              setSheetState(() => sheetLoading = true);
+              final normalizedPhone = AuthService.normalizePhone(phoneCon.text);
+              
+              final newGuardian = await _apiService.addGuardian(
+                nameCon.text,
+                normalizedPhone,
+                email: emailCon.text.isNotEmpty ? emailCon.text : null,
+              );
+
+              setSheetState(() => sheetLoading = false);
+              if (newGuardian != null) {
+                Navigator.pop(ctx);
+                _snack('Guardian added', _green);
+                _addLog("New guardian ${nameCon.text} added.");
+                _loadGuardians();
+              } else {
+                _snack('Failed to add guardian', _red);
+              }
+            }
+
+            return Container(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+                left: 20,
+                right: 20,
+                top: 24,
+              ),
+              decoration: const BoxDecoration(
+                color: _surface,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+              ),
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('Add New Guardian', style: TextStyle(color: _textPri, fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 20),
+                    _formField(controller: nameCon, label: 'Full Name', icon: Icons.person_rounded, validator: (v) => v!.trim().isEmpty ? 'Enter name' : null),
+                    const SizedBox(height: 14),
+                    _formField(controller: phoneCon, label: 'Phone Number', icon: Icons.phone_rounded, keyboard: TextInputType.phone, validator: (v) => (v ?? '').length < 10 ? 'Enter valid phone' : null),
+                    const SizedBox(height: 14),
+                    _formField(controller: emailCon, label: 'Email (Optional)', icon: Icons.email_rounded, keyboard: TextInputType.emailAddress),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: sheetLoading ? null : add,
+                        style: ElevatedButton.styleFrom(backgroundColor: _blue, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                        child: sheetLoading 
+                          ? const CircularProgressIndicator(color: Colors.white) 
+                          : const Text('Add Guardian', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+        );
+      }
+    );
+  }
+
+  Widget _formField({required TextEditingController controller, required String label, required IconData icon, TextInputType? keyboard, String? Function(String?)? validator}) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboard,
@@ -555,28 +299,355 @@ class _GuardianSetupScreenState extends State<GuardianSetupScreen> {
         prefixIcon: Icon(icon, color: _textSec, size: 20),
         filled: true,
         fillColor: _bg,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.white.withOpacity(0.1))),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.white.withOpacity(0.1))),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _blue, width: 1.5)),
+      ),
+    );
+  }
+
+  // ── Tabs Building ─────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _bg,
+      appBar: AppBar(
+        backgroundColor: _bg,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: _textPri),
+          onPressed: () => Navigator.pop(context),
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+        title: const Text('Guardian Hub', style: TextStyle(color: _textPri, fontSize: 20, fontWeight: FontWeight.w700)),
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: _blue,
+          labelColor: _blue,
+          unselectedLabelColor: _textSec,
+          tabs: const [
+            Tab(text: "Guardians"),
+            Tab(text: "SOS Rules"),
+            Tab(text: "Privacy"),
+          ],
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _blue, width: 1.5),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _red),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _red, width: 1.5),
-        ),
-        errorStyle: const TextStyle(color: _red, fontSize: 12),
+      ),
+      body: _isLoading && _guardians.isEmpty
+          ? const Center(child: CircularProgressIndicator(color: _blue))
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                _buildGuardiansTab(),
+                _buildSOSRulesTab(),
+                _buildPrivacyTab(),
+              ],
+            ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showAddGuardianSheet,
+        backgroundColor: _blue,
+        icon: const Icon(Icons.person_add_rounded, color: Colors.white),
+        label: const Text("Add Guardian", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  Widget _buildGuardiansTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Safe Check-in Card
+          InkWell(
+            onTap: _sendSafePing,
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [_green.withOpacity(0.2), _green.withOpacity(0.05)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: _green.withOpacity(0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.check_circle_rounded, color: _green, size: 36),
+                  SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("Send 'I am Safe' Ping", style: TextStyle(color: _textPri, fontSize: 16, fontWeight: FontWeight.bold)),
+                        SizedBox(height: 4),
+                        Text("Instantly reassure all guardians.", style: TextStyle(color: _green, fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Child App Invite Banner
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _blue.withOpacity(0.2)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: _blue.withOpacity(0.1), shape: BoxShape.circle),
+                  child: const Icon(Icons.phonelink_ring_rounded, color: _blue, size: 24),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text("Guardian Companion App", style: TextStyle(color: _textPri, fontWeight: FontWeight.bold, fontSize: 14)),
+                      const SizedBox(height: 2),
+                      const Text("Let them monitor via the Child App.", style: TextStyle(color: _textSec, fontSize: 12)),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: _inviteChildApp,
+                  child: const Text("Invite", style: TextStyle(color: _blue, fontWeight: FontWeight.bold)),
+                )
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Guardians List
+          const Text("Active Guardians", style: TextStyle(color: _textPri, fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          
+          if (_guardians.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(40.0),
+                child: Text("No guardians added yet.", style: TextStyle(color: _textSec)),
+              ),
+            ),
+          
+          ..._guardians.asMap().entries.map((entry) {
+            final idx = entry.key;
+            final g = entry.value;
+            final color = _avatarColors[idx % _avatarColors.length];
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: _surface,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: g.isPrimary ? _amber.withOpacity(0.4) : Colors.white.withOpacity(0.05)),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: color.withOpacity(0.15),
+                    radius: 24,
+                    child: Text(g.name[0].toUpperCase(), style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 18)),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(g.name, style: const TextStyle(color: _textPri, fontWeight: FontWeight.bold, fontSize: 16)),
+                            if (g.isPrimary) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(color: _amber.withOpacity(0.15), borderRadius: BorderRadius.circular(6)),
+                                child: const Text('Primary', style: TextStyle(color: _amber, fontSize: 10, fontWeight: FontWeight.bold)),
+                              ),
+                            ]
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(g.phone, style: const TextStyle(color: _textSec, fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.delete_outline, color: _red.withOpacity(0.8)),
+                    onPressed: () => _deleteGuardian(g.id, g.name),
+                  ),
+                ],
+              ),
+            );
+          }),
+          
+          const SizedBox(height: 80), // Padding for FAB
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSOSRulesTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text("Emergency Escalation Protocol", style: TextStyle(color: _textPri, fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          const Text("When you trigger an SOS, our system immediately contacts your guardians in this specific order:", style: TextStyle(color: _textSec, fontSize: 14, height: 1.5)),
+          const SizedBox(height: 30),
+          
+          _buildFlowStep(icon: Icons.sos_rounded, color: _red, title: "1. SOS Activated", subtitle: "You tap the SOS button or a severe fall is detected."),
+          _buildFlowConnector(),
+          _buildFlowStep(icon: Icons.star_rounded, color: _amber, title: "2. Primary Guardian", subtitle: "Immediate Push Alert & SMS sent to Primary Guardian.", isPrimary: true),
+          _buildFlowConnector(label: "If no response in 30s"),
+          _buildFlowStep(icon: Icons.group_rounded, color: _blue, title: "3. Secondary Guardians", subtitle: "Alert escalated to all other secondary guardians."),
+          _buildFlowConnector(label: "If no response in 1 min"),
+          _buildFlowStep(icon: Icons.local_hospital_rounded, color: Colors.teal, title: "4. Emergency Services", subtitle: "If configured, 911/Local services are alerted automatically."),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFlowStep({required IconData icon, required Color color, required String title, required String subtitle, bool isPrimary = false}) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: isPrimary ? _amber.withOpacity(0.3) : Colors.white.withOpacity(0.05)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: color.withOpacity(0.15), shape: BoxShape.circle),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(color: _textPri, fontWeight: FontWeight.bold, fontSize: 15)),
+                const SizedBox(height: 4),
+                Text(subtitle, style: const TextStyle(color: _textSec, fontSize: 13, height: 1.3)),
+              ],
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFlowConnector({String? label}) {
+    return Column(
+      children: [
+        Container(width: 2, height: 15, color: _textSec.withOpacity(0.3)),
+        if (label != null)
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(color: _bg, borderRadius: BorderRadius.circular(10), border: Border.all(color: _textSec.withOpacity(0.2))),
+            child: Text(label, style: const TextStyle(color: _textSec, fontSize: 11)),
+          ),
+        Container(width: 2, height: 15, color: _textSec.withOpacity(0.3)),
+      ],
+    );
+  }
+
+  Widget _buildPrivacyTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text("Access Controls", style: TextStyle(color: _textPri, fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          const Text("Decide what information each guardian can see.", style: TextStyle(color: _textSec, fontSize: 14)),
+          const SizedBox(height: 20),
+
+          ..._guardians.map((g) {
+            final prefs = _guardianPrefs[g.id] ?? {};
+            return Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(color: _surface, borderRadius: BorderRadius.circular(16)),
+              child: Theme(
+                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  title: Text(g.name, style: const TextStyle(color: _textPri, fontWeight: FontWeight.bold)),
+                  subtitle: const Text("Manage Permissions", style: TextStyle(color: _textSec, fontSize: 12)),
+                  children: [
+                    _buildToggleRow("Receive SOS Alerts", Icons.sos_rounded, _red, prefs['sos'] ?? true, (val) => _updatePref(g.id, 'sos', val)),
+                    _buildToggleRow("Live Location Tracking", Icons.location_on_rounded, _blue, prefs['location'] ?? true, (val) => _updatePref(g.id, 'location', val)),
+                    _buildToggleRow("View Health Vitals", Icons.health_and_safety_rounded, _green, prefs['health'] ?? false, (val) => _updatePref(g.id, 'health', val)),
+                    const SizedBox(height: 10),
+                  ],
+                ),
+              ),
+            );
+          }),
+
+          const SizedBox(height: 20),
+          const Divider(color: Colors.white10),
+          const SizedBox(height: 20),
+          
+          const Text("Activity Log", style: TextStyle(color: _textPri, fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+
+          ..._activityLog.map((log) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 4),
+                  width: 8, height: 8,
+                  decoration: const BoxDecoration(color: _blue, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(log["msg"]!, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                      const SizedBox(height: 2),
+                      Text(log["time"]!, style: const TextStyle(color: _textSec, fontSize: 11)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          )),
+          const SizedBox(height: 80),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToggleRow(String title, IconData icon, Color color, bool value, Function(bool) onChanged) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Icon(icon, color: color.withOpacity(0.8), size: 18),
+          const SizedBox(width: 12),
+          Expanded(child: Text(title, style: const TextStyle(color: Colors.white70, fontSize: 14))),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: color,
+            activeTrackColor: color.withOpacity(0.3),
+            inactiveTrackColor: Colors.white10,
+            inactiveThumbColor: _textSec,
+          ),
+        ],
       ),
     );
   }

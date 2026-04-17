@@ -50,15 +50,22 @@ class DashboardCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
-              gradient: LinearGradient(
-                colors: [
-                  color.withValues(alpha: 0.15),
-                  color.withValues(alpha: 0.05),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              border: Border.all(color: color.withValues(alpha: 0.2), width: 1),
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? color.withValues(alpha: 0.02)
+                  : null,
+              gradient: Theme.of(context).brightness == Brightness.light
+                  ? LinearGradient(
+                      colors: [
+                        color.withValues(alpha: 0.15),
+                        color.withValues(alpha: 0.05),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    )
+                  : null,
+              border: Theme.of(context).brightness == Brightness.dark
+                  ? Border.all(color: color.withValues(alpha: 0.02), width: 1)
+                  : Border.all(color: color.withValues(alpha: 0.2), width: 1),
             ),
             child: MediaQuery(
               data: MediaQuery.of(context).copyWith(textScaler: clampedScaler),

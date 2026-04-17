@@ -4,6 +4,7 @@ import '../widgets/page_transition.dart';
 import 'dashboard_screen.dart';
 import 'register_screen.dart';
 import 'guardian_dashboard_screen.dart';
+import 'child_dashboard_screen.dart';
 import 'reset_pin_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -39,6 +40,11 @@ class _LoginScreenState extends State<LoginScreen> {
       if (user.role == UserRole.guardian) {
         Navigator.of(context).pushAndRemoveUntil(
           PageTransition(page: const GuardianDashboardScreen()),
+          (route) => false,
+        );
+      } else if (user.role == UserRole.child) {
+        Navigator.of(context).pushAndRemoveUntil(
+          PageTransition(page: const ChildDashboardScreen()),
           (route) => false,
         );
       } else {

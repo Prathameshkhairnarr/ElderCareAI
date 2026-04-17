@@ -4,6 +4,7 @@ import '../services/health_profile_service.dart';
 import '../widgets/page_transition.dart';
 import 'dashboard_screen.dart';
 import 'guardian_dashboard_screen.dart';
+import 'child_dashboard_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -27,7 +28,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _error;
 
   // Simple role list
-  final List<String> _roles = ['elder', 'guardian'];
+  final List<String> _roles = ['elder', 'guardian', 'child'];
   final List<String> _genders = ['male', 'female', 'other'];
 
   @override
@@ -75,6 +76,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
         if (_selectedRole == 'guardian') {
           Navigator.of(context).pushAndRemoveUntil(
             PageTransition(page: const GuardianDashboardScreen()),
+            (route) => false,
+          );
+        } else if (_selectedRole == 'child') {
+          Navigator.of(context).pushAndRemoveUntil(
+            PageTransition(page: const ChildDashboardScreen()),
             (route) => false,
           );
         } else {

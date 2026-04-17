@@ -69,24 +69,16 @@ class _HealthProfileCardState extends State<HealthProfileCard> {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark ? null : cs.surface,
+          color: Theme.of(context).brightness == Brightness.dark 
+              ? accent.withValues(alpha: 0.05) 
+              : cs.surface,
           borderRadius: BorderRadius.circular(24),
-          gradient: Theme.of(context).brightness == Brightness.dark
-              ? LinearGradient(
-                  colors: [
-                    accent.withValues(alpha: 0.12),
-                    cs.surface,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+          border: Theme.of(context).brightness == Brightness.light
+              ? Border.all(
+                  color: Colors.green.withValues(alpha: 0.3),
+                  width: 1.5,
                 )
               : null,
-          border: Border.all(
-            color: Theme.of(context).brightness == Brightness.dark
-                ? accent.withValues(alpha: 0.20)
-                : cs.outline.withValues(alpha: 0.08),
-            width: Theme.of(context).brightness == Brightness.dark ? 1.5 : 1,
-          ),
           boxShadow: Theme.of(context).brightness == Brightness.light
               ? [
                   BoxShadow(
@@ -328,9 +320,9 @@ class _HealthProfileCardState extends State<HealthProfileCard> {
       width: fullWidth ? double.infinity : null,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: isDark ? 0.18 : 0.08),
+        color: isDark ? color.withValues(alpha: 0.05) : color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: isDark ? 0.25 : 0.12)),
+        border: Border.all(color: isDark ? color.withValues(alpha: 0.05) : color.withValues(alpha: 0.12)),
       ),
       child: Row(
         children: [
@@ -378,9 +370,9 @@ class _HealthProfileCardState extends State<HealthProfileCard> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: isDark ? 0.18 : 0.08),
+        color: isDark ? color.withValues(alpha: 0.05) : color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: isDark ? 0.25 : 0.15)),
+        border: Border.all(color: isDark ? color.withValues(alpha: 0.05) : color.withValues(alpha: 0.15)),
       ),
       child: Row(
         children: [

@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import 'package:intl/intl.dart';
 
@@ -24,10 +26,53 @@ class _AlertsHistoryScreenState extends State<AlertsHistoryScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final alerts = await _api.getAlerts();
+      // 1. Load backend alerts
+      final backendAlerts = await _api.getAlerts() ?? [];
+
+      // 2. Load locally saved scam alerts
+      List<Map<String, dynamic>> localAlerts = [];
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final localEntries = prefs.getStringList('local_safety_alerts') ?? [];
+        for (final entry in localEntries) {
+          try {
+            final json = jsonDecode(entry) as Map<String, dynamic>;
+            // Add a flag to distinguish local alerts (no backend ID)
+            json['id'] = null;
+            localAlerts.add(json);
+          } catch (_) {}
+        }
+      } catch (_) {}
+
+      // 3. Merge: local + backend, dedup by title similarity
+      final seen = <String>{};
+      final merged = <dynamic>[];
+
+      // Backend alerts first (they have IDs for delete operations)
+      for (final alert in backendAlerts) {
+        final key = '${alert['title']}_${alert['alert_type']}';
+        seen.add(key);
+        merged.add(alert);
+      }
+
+      // Then local alerts (only if not already from backend)
+      for (final alert in localAlerts) {
+        final key = '${alert['title']}_${alert['alert_type']}';
+        if (!seen.contains(key)) {
+          merged.add(alert);
+        }
+      }
+
+      // Sort by created_at descending (newest first)
+      merged.sort((a, b) {
+        final dateA = DateTime.tryParse(a['created_at'] ?? '') ?? DateTime(2000);
+        final dateB = DateTime.tryParse(b['created_at'] ?? '') ?? DateTime(2000);
+        return dateB.compareTo(dateA);
+      });
+
       if (mounted) {
         setState(() {
-          _alerts = alerts ?? [];
+          _alerts = merged;
           _isLoading = false;
         });
       }
@@ -36,7 +81,7 @@ class _AlertsHistoryScreenState extends State<AlertsHistoryScreen> {
     }
   }
 
-  Future<void> _deleteAlert(int alertId, int index) async {
+  Future<void> _deleteAlert(dynamic alertId, int index) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -58,17 +103,45 @@ class _AlertsHistoryScreenState extends State<AlertsHistoryScreen> {
 
     if (confirmed != true || !mounted) return;
 
-    final success = await _api.deleteAlert(alertId);
-    if (mounted) {
-      if (success) {
+    if (alertId == null) {
+      // Local-only alert — remove from SharedPreferences
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final localEntries = prefs.getStringList('local_safety_alerts') ?? [];
+        // Find and remove the matching entry by index in merged list
+        final alertData = _alerts[index];
+        localEntries.removeWhere((entry) {
+          try {
+            final json = jsonDecode(entry);
+            return json['title'] == alertData['title'] &&
+                json['created_at'] == alertData['created_at'];
+          } catch (_) {
+            return false;
+          }
+        });
+        await prefs.setStringList('local_safety_alerts', localEntries);
+      } catch (_) {}
+
+      if (mounted) {
         setState(() => _alerts.removeAt(index));
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Alert deleted successfully')),
         );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to delete alert')),
-        );
+      }
+    } else {
+      // Backend alert — use API
+      final success = await _api.deleteAlert(alertId);
+      if (mounted) {
+        if (success) {
+          setState(() => _alerts.removeAt(index));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Alert deleted successfully')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to delete alert')),
+          );
+        }
       }
     }
   }

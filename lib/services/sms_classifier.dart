@@ -1416,9 +1416,15 @@ class SmsClassifier {
     'bajajfinserv.in',
     'cred.club',
     'freecharge.in',
-    'mobikwik.com',
     'amazon.in',
+    'amazon.com',
+    'flipkart.com',
+    'swiggy.com',
+    'zomato.com',
     'jio.com',
+    'myntra.com',
+    'uber.com',
+    'ola.com',
     // Government / utility
     'gov.in',
     'nic.in',
@@ -1634,8 +1640,21 @@ class SmsClassifier {
     String? sender,
     DateTime? timeReceived,
     bool isRepeated = false,
+    bool isContact = false,
   }) {
     if (message == null || message.trim().isEmpty) return _safeDefault;
+
+    // --- TRUECALLER-STYLE CONTACT BYPASS ---
+    // If the sender is saved in contacts, it's 99.9% safe. Skip expensive analysis.
+    if (isContact) {
+      return const SmsClassification(
+        isScam: false,
+        riskScore: 0,
+        scamType: 'Contact',
+        explanation: 'Message is from a verified saved contact. Bypassed filters.',
+        label: 'SAFE',
+      );
+    }
 
     try {
       final safeMessage = message.length > 2000
@@ -1687,21 +1706,37 @@ class SmsClassifier {
       final reasons = <String>[];
       final signals = <String, int>{}; 
 
-            // --- ADVANCED BEHAVIORAL CHECKS ---
+      // --- ADVANCED BEHAVIORAL CHECKS ---
       if (sender != null && sender.isNotEmpty) {
-        if (RegExp(r'^\+?[0-9]{10,12}\$').hasMatch(sender)) {
-          score += 20;
-          signals['sender_random_mobile'] = 20;
-          reasons.add('Sender appears to be a random mobile number (+20)');
-        } else if (RegExp(r'^[A-Z]{2}-[A-Z0-9]{5,6}\$').hasMatch(sender) &&
-            !['hdfc', 'sbi', 'airtel', 'jio', 'paytm'].any((t) => sender.toLowerCase().contains(t))) {
-          score += 15;
-          signals['sender_unusual'] = 15;
-          reasons.add('Sender ID is unknown/unusual format (+15)');
-        } else if (['hdfc', 'sbi', 'airtel', 'jio', 'paytm', 'icici'].any((t) => sender.toLowerCase().contains(t))) {
-          score -= 40;
-          signals['sender_trusted'] = -40;
-          reasons.add('Trusted sender pattern (-40)');
+        if (RegExp(r'^\+?[0-9]{10,12}$').hasMatch(sender.trim())) {
+          // Scams typically come from 10-digit mobile numbers. Links from these are highly dangerous.
+          if (hasLinks) {
+             score += 40;
+             signals['sender_mobile_with_link'] = 40;
+             reasons.add('Random mobile number sent a link (+40)');
+          } else {
+             score += 20;
+             signals['sender_random_mobile'] = 20;
+             reasons.add('Sender appears to be a random mobile number (+20)');
+          }
+        } else if (RegExp(r'^[A-Z]{2}-[A-Z0-9]{5,6}$').hasMatch(sender.trim().toUpperCase())) {
+          // India DLT ID Format (e.g., AD-HDFCBK)
+          final senderLower = sender.toLowerCase();
+          final isWhitelisted = ['hdfc', 'sbi', 'airtel', 'jio', 'paytm', 'icici', 'zomato', 'swiggy', 'amazon', 'flpkrt', 'myntra', 'uber', 'ola', 'pnb', 'axis', 'google'].any((t) => senderLower.contains(t));
+          
+          if (isWhitelisted && !hasSuspiciousDomain) {
+            score -= 50; // Trusted verified business
+            signals['sender_trusted'] = -50;
+            reasons.add('Verified DLT Business Partner (-50)');
+          } else if (!hasLinks && urgencyHits.isEmpty && threatHits.isEmpty) {
+            score -= 10; // Unrecognized DLT, but no suspicious links/words
+            signals['sender_dlt_neutral'] = -10;
+            reasons.add('Verified DLT Sender format (-10)');
+          }
+        } else if (['hdfc', 'sbi', 'airtel', 'jio', 'paytm', 'icici', 'amazon', 'swiggy', 'zomato'].any((t) => sender.toLowerCase().contains(t))) {
+           score -= 40;
+           signals['sender_trusted'] = -40;
+           reasons.add('Trusted sender pattern (-40)');
         }
       }
 

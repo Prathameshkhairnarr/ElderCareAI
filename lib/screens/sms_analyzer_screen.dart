@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/sms_model.dart';
 import '../services/api_service.dart';
 import '../services/risk_score_provider.dart';
@@ -31,11 +33,44 @@ class _SmsAnalyzerScreenState extends State<SmsAnalyzerScreen> {
   }
 
   Future<void> _loadSmsList() async {
-    // Try backend first, fall back to local
-    final list = await _api.getSmsHistory();
+    // 1. Load from backend API
+    final backendList = await _api.getSmsHistory();
+
+    // 2. Load locally cached results (from background SMS processing)
+    List<SmsModel> localList = [];
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final localResults = prefs.getStringList('local_sms_results') ?? [];
+      for (final entry in localResults) {
+        try {
+          final json = jsonDecode(entry) as Map<String, dynamic>;
+          localList.add(SmsModel.fromLocal(json));
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    // 3. Merge: local first, then backend, dedup by body text
+    final seen = <String>{};
+    final merged = <SmsModel>[];
+
+    // Local results first (newest)
+    for (final sms in localList) {
+      final key = sms.body.trim().toLowerCase();
+      if (seen.add(key)) {
+        merged.add(sms);
+      }
+    }
+    // Backend results
+    for (final sms in backendList) {
+      final key = sms.body.trim().toLowerCase();
+      if (seen.add(key)) {
+        merged.add(sms);
+      }
+    }
+
     if (!mounted) return;
     setState(() {
-      _smsList = list.isNotEmpty ? list : [];
+      _smsList = merged;
       _loadingList = false;
     });
   }
@@ -745,69 +780,69 @@ class _SmsAnalyzerScreenState extends State<SmsAnalyzerScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Status row
+            // Status row — badge + risk score
             Row(
               children: [
                 // Status badge
-                Flexible(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: statusColor.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isResolved
-                              ? Icons.check_circle_rounded
-                              : isFraud
-                              ? Icons.warning_amber_rounded
-                              : Icons.verified_rounded,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isResolved
+                            ? Icons.check_circle_rounded
+                            : isFraud
+                            ? Icons.warning_amber_rounded
+                            : Icons.verified_rounded,
+                        color: statusColor,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isResolved
+                            ? 'Resolved'
+                            : isFraud
+                            ? 'Threat'
+                            : 'Safe',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
                           color: statusColor,
-                          size: 16,
                         ),
-                        const SizedBox(width: 5),
-                        Text(
-                          isResolved
-                              ? 'Resolved'
-                              : isFraud
-                              ? 'Active Threat'
-                              : 'Safe',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: statusColor,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                // Category
+                const SizedBox(width: 6),
+                // Category — takes remaining space
                 Expanded(
                   child: Text(
                     _friendlyCategory(sms.category),
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: Theme.of(
                         context,
                       ).colorScheme.onSurface.withValues(alpha: 0.5),
                     ),
                     overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
                 ),
+                const SizedBox(width: 6),
                 // Risk score
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
+                    horizontal: 8,
+                    vertical: 4,
                   ),
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.15),
@@ -816,7 +851,7 @@ class _SmsAnalyzerScreenState extends State<SmsAnalyzerScreen> {
                   child: Text(
                     '${score.toInt()}%',
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.w900,
                       color: color,
                     ),

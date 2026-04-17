@@ -6,6 +6,11 @@ class GuardianModel {
   final String? email;
   final bool isPrimary;
   final DateTime? createdAt;
+  
+  // Privacy & Access settings
+  final bool canViewLocation;
+  final bool canViewHealth;
+  final bool receivesSOS;
 
   GuardianModel({
     required this.id,
@@ -15,6 +20,9 @@ class GuardianModel {
     this.email,
     required this.isPrimary,
     this.createdAt,
+    this.canViewLocation = false,
+    this.canViewHealth = false,
+    this.receivesSOS = true,
   });
 
   factory GuardianModel.fromJson(Map<String, dynamic> json) {
@@ -28,6 +36,9 @@ class GuardianModel {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'])
           : null,
+      canViewLocation: json['can_view_location'] ?? false,
+      canViewHealth: json['can_view_health'] ?? false,
+      receivesSOS: json['receives_sos'] ?? true,
     );
   }
 
@@ -37,6 +48,9 @@ class GuardianModel {
       'phone': phone,
       'email': email,
       'is_primary': isPrimary,
+      'can_view_location': canViewLocation,
+      'can_view_health': canViewHealth,
+      'receives_sos': receivesSOS,
     };
   }
 }

@@ -18,6 +18,7 @@ import 'dart:async';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/guardian_dashboard_screen.dart';
+import 'screens/child_dashboard_screen.dart';
 
 void main() {
   runZonedGuarded(
@@ -119,9 +120,13 @@ void main() {
       final auth = AuthService();
       Widget homeWidget = const LoginScreen();
       if (auth.isLoggedIn && auth.currentUser != null) {
-        homeWidget = auth.currentUser!.role == UserRole.guardian
-            ? const GuardianDashboardScreen()
-            : const DashboardScreen();
+        if (auth.currentUser!.role == UserRole.guardian) {
+          homeWidget = const GuardianDashboardScreen();
+        } else if (auth.currentUser!.role == UserRole.child) {
+          homeWidget = const ChildDashboardScreen();
+        } else {
+          homeWidget = const DashboardScreen();
+        }
       }
 
       runApp(ElderCareApp(homeWidget: homeWidget));

@@ -602,22 +602,16 @@ class _VoiceAssistantCardState extends State<_VoiceAssistantCard>
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
         decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark ? null : cs.surface,
+          color: Theme.of(context).brightness == Brightness.dark
+              ? statusColor.withValues(alpha: 0.05)
+              : cs.surface,
           borderRadius: BorderRadius.circular(24),
-          gradient: Theme.of(context).brightness == Brightness.dark
-              ? LinearGradient(
-                  colors: [
-                    statusColor.withValues(alpha: 0.18),
-                    cs.surface,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+          border: Theme.of(context).brightness == Brightness.light
+              ? Border.all(
+                  color: statusColor.withValues(alpha: 0.25),
+                  width: 1.5,
                 )
               : null,
-          border: Border.all(
-            color: statusColor.withValues(alpha: 0.25),
-            width: 1.5,
-          ),
           boxShadow: Theme.of(context).brightness == Brightness.light
               ? [
                   BoxShadow(
@@ -840,24 +834,16 @@ class _MedicationReminderCardState extends State<_MedicationReminderCard> {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark ? null : cs.surface,
+          color: Theme.of(context).brightness == Brightness.dark
+              ? accentColor.withValues(alpha: 0.05)
+              : cs.surface,
           borderRadius: BorderRadius.circular(24),
-          gradient: Theme.of(context).brightness == Brightness.dark
-              ? LinearGradient(
-                  colors: [
-                    accentColor.withValues(alpha: 0.12),
-                    cs.surface,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+          border: Theme.of(context).brightness == Brightness.light
+              ? Border.all(
+                  color: Colors.green.withValues(alpha: 0.3),
+                  width: 1.5,
                 )
               : null,
-          border: Border.all(
-            color: Theme.of(context).brightness == Brightness.dark
-                ? accentColor.withValues(alpha: 0.20)
-                : cs.outline.withValues(alpha: 0.08),
-            width: Theme.of(context).brightness == Brightness.dark ? 1.5 : 1,
-          ),
           boxShadow: Theme.of(context).brightness == Brightness.light
               ? [
                   BoxShadow(
@@ -946,11 +932,13 @@ class _MedicationReminderCardState extends State<_MedicationReminderCard> {
                       vertical: 14,
                     ),
                     decoration: BoxDecoration(
-                      color: cs.surface.withValues(alpha: 0.5),
+                      color: Theme.of(context).brightness == Brightness.light
+                          ? cs.surface.withValues(alpha: 0.5)
+                          : cs.surface.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: accentColor.withValues(alpha: 0.12),
-                      ),
+                      border: Theme.of(context).brightness == Brightness.light
+                          ? Border.all(color: accentColor.withValues(alpha: 0.12))
+                          : Border.all(color: accentColor.withValues(alpha: 0.05)),
                     ),
                     child: Row(
                       children: [
@@ -1103,24 +1091,16 @@ class _HealthCheckCardState extends State<_HealthCheckCard> {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark ? null : cs.surface,
+          color: Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFF42A5F5).withValues(alpha: 0.05)
+              : cs.surface,
           borderRadius: BorderRadius.circular(24),
-          gradient: Theme.of(context).brightness == Brightness.dark
-              ? LinearGradient(
-                  colors: [
-                    const Color(0xFF42A5F5).withValues(alpha: 0.12),
-                    cs.surface,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+          border: Theme.of(context).brightness == Brightness.light
+              ? Border.all(
+                  color: Colors.green.withValues(alpha: 0.3),
+                  width: 1.5,
                 )
               : null,
-          border: Border.all(
-            color: Theme.of(context).brightness == Brightness.dark
-                ? const Color(0xFF42A5F5).withValues(alpha: 0.18)
-                : cs.outline.withValues(alpha: 0.08),
-            width: Theme.of(context).brightness == Brightness.dark ? 1.5 : 1,
-          ),
           boxShadow: Theme.of(context).brightness == Brightness.light
               ? [
                   BoxShadow(
@@ -1180,9 +1160,13 @@ class _HealthCheckCardState extends State<_HealthCheckCard> {
       margin: const EdgeInsets.symmetric(horizontal: 4),
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
       decoration: BoxDecoration(
-        color: m.color.withValues(alpha: 0.08),
+        color: Theme.of(context).brightness == Brightness.light
+            ? m.color.withValues(alpha: 0.08)
+            : m.color.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: m.color.withValues(alpha: 0.15)),
+        border: Theme.of(context).brightness == Brightness.light
+            ? Border.all(color: m.color.withValues(alpha: 0.15))
+            : Border.all(color: m.color.withValues(alpha: 0.05)),
       ),
       child: Column(
         children: [

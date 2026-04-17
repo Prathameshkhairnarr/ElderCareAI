@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/health_profile_service.dart';
 import '../services/risk_score_provider.dart';
+import '../services/battery_optimizer_service.dart';
 import '../widgets/dashboard_card.dart';
 import '../widgets/risk_indicator.dart';
 
@@ -41,6 +42,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     _riskProvider.addListener(_onRiskUpdate);
     _loadData();
+    // Trigger battery optimization check after UI renders
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          BatteryOptimizerService.ensureBackgroundPermissions(context);
+        }
+      });
+    });
   }
 
   @override

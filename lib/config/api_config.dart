@@ -1,7 +1,7 @@
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ApiConfig {
-  static const String baseUrl = 'https://eldercare-backend-awcwaemida-as.a.run.app';
+  static const String baseUrl = 'https://eldercareai-1.onrender.com';
 
   // ── Gemini AI Configuration ──
   static final String geminiApiKey = dotenv.env['GEMINI_API_KEY'] ?? '';

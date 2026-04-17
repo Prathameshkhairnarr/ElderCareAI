@@ -7,6 +7,8 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:another_telephony/telephony.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../config/api_config.dart';
 import 'sms_classifier.dart';
 import 'risk_score_engine.dart';
@@ -20,6 +22,7 @@ import 'voice_alert_service.dart';
 
 // ── Constants ──
 const String notificationChannelId = 'elder_care_alerts';
+const String _serviceChannelId = 'elder_care_service';
 const int notificationId = 888;
 const String _baseUrl = ApiConfig.baseUrl;
 
@@ -72,12 +75,68 @@ Future<void> processSms(String body, String sender) async {
         ? body.substring(0, _maxMessageLength)
         : body;
 
+    // --- TRUECALLER-STYLE CONTACT BYPASS ---
+    bool isContact = false;
+    try {
+      if (await Permission.contacts.isGranted) {
+        String normalizedSender = sender.replaceAll(RegExp(r'[^\d+]'), '');
+        // Only verify against contacts if sender appears to be a normal phone number
+        if (normalizedSender.length >= 10) { 
+          List<Contact> contacts = await FlutterContacts.getContacts(withProperties: true);
+          String matchTarget = normalizedSender.length > 10 
+              ? normalizedSender.substring(normalizedSender.length - 10) 
+              : normalizedSender;
+              
+          for (var c in contacts) {
+             for (var phone in c.phones) {
+                String normalizedPhone = phone.number.replaceAll(RegExp(r'[^\d]'), '');
+                if (normalizedPhone.endsWith(matchTarget)) {
+                   isContact = true;
+                   break;
+                }
+             }
+             if (isContact) break;
+          }
+        }
+      }
+    } catch (e) {
+      AppLogger.warn(LogCategory.sms, 'Contact check bypassed due to error: $e');
+    }
+
     // ── STEP 1: On-device heuristic classification (instant, 0 network) ──
-    final classification = SmsClassifier.classify(safeBody);
+    final classification = SmsClassifier.classify(
+      safeBody,
+      sender: sender,
+      isContact: isContact,
+    );
     AppLogger.info(
       LogCategory.sms,
       'SMS classified: ${classification.label} risk=${classification.riskScore}',
     );
+
+    // ── STEP 1.5: Save classified result locally for Recent Messages ──
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final localResults = prefs.getStringList('local_sms_results') ?? [];
+      final entry = jsonEncode({
+        'sender': sender,
+        'body': safeBody,
+        'riskScore': classification.riskScore,
+        'category': classification.scamType,
+        'isFraud': classification.isScam,
+        'explanation': classification.explanation,
+        'isResolved': false,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+      localResults.insert(0, entry); // newest first
+      // Keep max 50 local entries
+      if (localResults.length > 50) {
+        localResults.removeRange(50, localResults.length);
+      }
+      await prefs.setStringList('local_sms_results', localResults);
+    } catch (e) {
+      AppLogger.error(LogCategory.sms, 'Local SMS save failed: $e');
+    }
 
     // ── STEP 2: Update dynamic risk score ──
     final updatedScore = await RiskScoreEngine.recordEvent(
@@ -110,6 +169,39 @@ Future<void> processSms(String body, String sender) async {
         smsRiskScore: classification.riskScore,
         scamType: classification.scamType,
       );
+
+      // Save scam alert locally for Safety Alerts screen
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final localAlerts = prefs.getStringList('local_safety_alerts') ?? [];
+
+        // Determine severity based on risk score
+        String severity = 'medium';
+        if (classification.riskScore >= 80) {
+          severity = 'critical';
+        } else if (classification.riskScore >= 50) {
+          severity = 'high';
+        }
+
+        final alertEntry = jsonEncode({
+          'title': classification.label == 'PHISHING_LINK'
+              ? 'Dangerous Link Detected'
+              : 'Scam SMS Detected',
+          'details': '${classification.explanation}\n\nFrom: $sender\nMessage: ${safeBody.length > 100 ? '${safeBody.substring(0, 100)}...' : safeBody}',
+          'alert_type': 'sms_fraud',
+          'severity': severity,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+
+        localAlerts.insert(0, alertEntry);
+        // Keep max 100 alerts
+        if (localAlerts.length > 100) {
+          localAlerts.removeRange(100, localAlerts.length);
+        }
+        await prefs.setStringList('local_safety_alerts', localAlerts);
+      } catch (e) {
+        AppLogger.error(LogCategory.sms, 'Local alert save failed: $e');
+      }
 
       if (shouldNotify) {
         String titlePrefix = classification.label == 'PHISHING_LINK'
@@ -269,6 +361,9 @@ void onStart(ServiceInstance service) async {
 
     if (service is AndroidServiceInstance) {
       try {
+        // CRITICAL: Set as foreground immediately to prevent kill
+        await service.setAsForegroundService();
+
         service.on('setAsForeground').listen((_) {
           service.setAsForegroundService();
         });
@@ -286,6 +381,20 @@ void onStart(ServiceInstance service) async {
     service.on('stopService').listen((_) {
       service.stopSelf();
     });
+
+    // ── Watchdog Timer: keeps service alive ──
+    // Updates the notification periodically so Android knows the service is active
+    Timer.periodic(const Duration(minutes: 5), (timer) async {
+      if (service is AndroidServiceInstance) {
+        if (await service.isForegroundService()) {
+          service.setForegroundNotificationInfo(
+            title: 'ElderCare AI Active',
+            content: 'SMS intelligence monitoring active...',
+          );
+        }
+      }
+    });
+
 
     // ── SMS Listener ──
     try {
@@ -389,17 +498,31 @@ void _showNotification(String title, String body, bool isScam) async {
 
 Future<void> _createNotificationChannel() async {
   final plugin = FlutterLocalNotificationsPlugin();
-  const channel = AndroidNotificationChannel(
+  final androidPlugin = plugin
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >();
+
+  // 1. Scam alert channel — HIGH importance (popup + sound)
+  const alertChannel = AndroidNotificationChannel(
     notificationChannelId,
     'ElderCare Alerts',
     description: 'Alerts for detected scams and threats',
     importance: Importance.high,
   );
-  await plugin
-      .resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin
-      >()
-      ?.createNotificationChannel(channel);
+  await androidPlugin?.createNotificationChannel(alertChannel);
+
+  // 2. Service channel — LOW importance (silent, no popup, persistent)
+  const serviceChannel = AndroidNotificationChannel(
+    _serviceChannelId,
+    'ElderCare Background Service',
+    description: 'Keeps SMS protection running in the background',
+    importance: Importance.low,
+    showBadge: false,
+    enableVibration: false,
+    playSound: false,
+  );
+  await androidPlugin?.createNotificationChannel(serviceChannel);
 }
 
 Future<void> initECAIBackground() async {
@@ -408,24 +531,35 @@ Future<void> initECAIBackground() async {
   // Create channel BEFORE starting service (Android 13+ crash prevention)
   await _createNotificationChannel();
 
-  await service.configure(
-    androidConfiguration: AndroidConfiguration(
-      onStart: onStart,
-      autoStart: true,
-      isForegroundMode: true,
-      notificationChannelId: notificationChannelId,
-      initialNotificationTitle: 'ElderCare AI Active',
-      initialNotificationContent: 'SMS intelligence monitoring active...',
-      foregroundServiceNotificationId: notificationId,
-    ),
-    iosConfiguration: IosConfiguration(
-      autoStart: true,
-      onForeground: onStart,
-      onBackground: (ServiceInstance service) {
-        return true;
-      },
-    ),
-  );
+  // Request battery optimization exemption (critical for OEM devices)
+  // Without this, Xiaomi/Samsung/Huawei will kill the service aggressively
+  try {
+    await service.configure(
+      androidConfiguration: AndroidConfiguration(
+        onStart: onStart,
+        autoStart: true,
+        autoStartOnBoot: true,
+        isForegroundMode: true,
+        notificationChannelId: _serviceChannelId,
+        initialNotificationTitle: 'ElderCare AI Active',
+        initialNotificationContent: 'SMS intelligence monitoring active...',
+        foregroundServiceNotificationId: notificationId,
+      ),
+      iosConfiguration: IosConfiguration(
+        autoStart: true,
+        onForeground: onStart,
+        onBackground: (ServiceInstance service) {
+          return true;
+        },
+      ),
+    );
+  } catch (e) {
+    AppLogger.error(
+      LogCategory.lifecycle,
+      'Background service configure failed: $e',
+    );
+  }
 
   service.startService();
 }
+
