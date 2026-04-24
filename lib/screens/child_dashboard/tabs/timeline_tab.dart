@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../child_theme.dart';
+import '../child_main_screen.dart';
 
 class TimelineTab extends StatelessWidget {
   const TimelineTab({Key? key}) : super(key: key);
@@ -11,15 +11,15 @@ class TimelineTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Timeline", style: ChildTheme.titleStyle.copyWith(fontSize: 32)),
+          const Text("Timeline", style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: MonitorTheme.textPrimary)),
           const SizedBox(height: 4),
-          Text("Recent activity and events", style: ChildTheme.subtitleStyle),
+          Text("Recent activity and events", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: MonitorTheme.textTert)),
           const SizedBox(height: 24),
           
-          _buildTimelineItem("Arrived Home", "2 mins ago", Icons.location_on, ChildTheme.safeGreen),
-          _buildTimelineItem("Focus session ended", "2h ago", Icons.psychology, ChildTheme.primaryBlue),
-          _buildTimelineItem("Checked in", "3h ago", Icons.check_circle_outline, ChildTheme.safeGreen),
-          _buildTimelineItem("Left School", "4h ago", Icons.school, ChildTheme.purpleAcc),
+          _buildTimelineItem("Arrived Home", "2 mins ago", Icons.location_on, MonitorTheme.green),
+          _buildTimelineItem("Focus session ended", "2h ago", Icons.psychology, MonitorTheme.blue),
+          _buildTimelineItem("Checked in", "3h ago", Icons.check_circle_outline, MonitorTheme.green),
+          _buildTimelineItem("Left School", "4h ago", Icons.school, MonitorTheme.purple),
         ],
       ),
     );
@@ -35,11 +35,11 @@ class TimelineTab extends StatelessWidget {
                  children: [
                     Container(
                        padding: const EdgeInsets.all(10),
-                       decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+                       decoration: BoxDecoration(color: color.withOpacity(0.15), shape: BoxShape.circle),
                        child: Icon(icon, color: color, size: 20),
                     ),
                     const SizedBox(height: 8),
-                    Container(width: 2, height: 40, color: ChildTheme.borderLight)
+                    Container(width: 2, height: 40, color: MonitorTheme.border)
                  ],
               ),
               const SizedBox(width: 16),
@@ -47,9 +47,9 @@ class TimelineTab extends StatelessWidget {
                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                       Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: ChildTheme.textPrimary)),
+                       Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: MonitorTheme.textPrimary)),
                        const SizedBox(height: 4),
-                       Text(time, style: ChildTheme.subtitleStyle),
+                       Text(time, style: TextStyle(fontSize: 14, color: MonitorTheme.textTert)),
                     ]
                  )
               )

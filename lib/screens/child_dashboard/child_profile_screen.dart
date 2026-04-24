@@ -1,0 +1,1914 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../services/auth_service.dart';
+import '../../services/settings_service.dart';
+import '../../services/health_profile_service.dart';
+import '../../services/api_service.dart';
+import '../../widgets/page_transition.dart';
+import '../login_screen.dart';
+import '../health_profile_view_screen.dart';
+import '../settings/contacts_screen.dart';
+
+// ═══════════════════════════════════════════════════════════════
+//  PROFILE SCREEN — Central hub for user profile & app settings
+// ═══════════════════════════════════════════════════════════════
+
+class ChildProfileScreen extends StatefulWidget {
+  const ChildProfileScreen({super.key});
+
+  @override
+  State<ChildProfileScreen> createState() => _ChildProfileScreenState();
+}
+
+class _ChildProfileScreenState extends State<ChildProfileScreen> {
+  final _auth = AuthService();
+  final _settings = SettingsService();
+  final _healthProfile = HealthProfileService();
+  final _api = ApiService();
+  final _imagePicker = ImagePicker();
+
+  String? _profileImagePath;
+
+  @override
+  void initState() {
+    super.initState();
+    _settings.addListener(_onSettingsChanged);
+    _healthProfile.addListener(_onSettingsChanged);
+    _loadProfileImage();
+  }
+
+  @override
+  void dispose() {
+    _settings.removeListener(_onSettingsChanged);
+    _healthProfile.removeListener(_onSettingsChanged);
+    super.dispose();
+  }
+
+  void _onSettingsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadProfileImage() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? userPhone = _auth.currentUser?.phone;
+
+    // Fallback: Read from SharedPreferences directly if currentUser isn't ready
+    if (userPhone == null || userPhone.isEmpty) {
+      final userDataStr = prefs.getString('user_data');
+      if (userDataStr != null) {
+        final userData = jsonDecode(userDataStr) as Map<String, dynamic>;
+        userPhone = userData['phone'] as String?;
+      }
+    }
+
+    // 1. Try loading from local cache first (instant)
+    if (userPhone != null && userPhone.isNotEmpty) {
+      final path = prefs.getString('profile_image_$userPhone');
+      if (path != null && File(path).existsSync() && mounted) {
+        setState(() => _profileImagePath = path);
+      }
+    }
+
+    // 2. Try downloading from cloud in background
+    try {
+      final cloudPhoto = await _api.getProfilePhoto();
+      if (cloudPhoto != null && mounted) {
+        // Decode base64 and save to local file
+        final bytes = base64Decode(cloudPhoto);
+        final dir = await Directory.systemTemp.createTemp('profile_');
+        final file = File('${dir.path}/profile_photo.jpg');
+        await file.writeAsBytes(bytes);
+
+        // Save locally for future instant access
+        if (userPhone != null && userPhone.isNotEmpty) {
+          await prefs.setString('profile_image_$userPhone', file.path);
+        }
+
+        if (mounted) {
+          setState(() => _profileImagePath = file.path);
+        }
+      }
+    } catch (e) {
+      // Cloud load failed — local image already loaded, no problem
+    }
+  }
+
+  Future<void> _saveProfileImage(String path) async {
+    final prefs = await SharedPreferences.getInstance();
+    String? userPhone = _auth.currentUser?.phone;
+
+    // Fallback
+    if (userPhone == null || userPhone.isEmpty) {
+      final userDataStr = prefs.getString('user_data');
+      if (userDataStr != null) {
+        final userData = jsonDecode(userDataStr) as Map<String, dynamic>;
+        userPhone = userData['phone'] as String?;
+      }
+    }
+
+    if (userPhone != null && userPhone.isNotEmpty) {
+      await prefs.setString('profile_image_$userPhone', path);
+    }
+  }
+
+  Future<String?> _pickProfileImage({bool saveImmediately = true}) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        return Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: cs.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: cs.onSurface.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Choose Photo',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => Navigator.pop(ctx, ImageSource.camera),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.camera_alt_rounded,
+                              color: cs.primary,
+                              size: 32,
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              'Camera',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Column(
+                          children: [
+                            Icon(
+                              Icons.photo_library_rounded,
+                              color: Color(0xFF7C4DFF),
+                              size: 32,
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              'Gallery',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (source == null) return null;
+
+    final picked = await _imagePicker.pickImage(
+      source: source,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 80,
+    );
+
+    if (picked != null && mounted) {
+      if (saveImmediately) {
+        await _saveProfileImage(picked.path);
+        setState(() => _profileImagePath = picked.path);
+
+        // Upload to cloud in background
+        try {
+          final bytes = await File(picked.path).readAsBytes();
+          final base64Image = base64Encode(bytes);
+          await _api.uploadProfilePhoto(base64Image);
+        } catch (e) {
+          // Cloud upload failed — local save already done
+        }
+      }
+      return picked.path;
+    }
+    return null;
+  }
+
+  // ── Logout with confirmation ──
+  void _logout() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _auth.logout();
+              Navigator.of(context).pushAndRemoveUntil(
+                PageTransition(page: const LoginScreen()),
+                (route) => false,
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Dialogs ──
+  void _showTermsDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Terms of Service'),
+        content: const SingleChildScrollView(
+          child: Text(
+            'ElderCare AI Terms of Service\n\n'
+            '1. Acceptance of Terms\n'
+            'By using this app, you agree to these terms.\n\n'
+            '2. Service Description\n'
+            'ElderCare AI provides scam detection and emergency alert features.\n\n'
+            '3. User Responsibilities\n'
+            '- Provide accurate information\n'
+            '- Use the app responsibly\n'
+            '- Maintain account security\n\n'
+            '4. Limitations\n'
+            'The app provides assistance but is not a substitute for professional advice.\n\n'
+            '5. Privacy\n'
+            'See our Privacy Policy for data handling practices.\n\n'
+            'Last updated: February 2026',
+            style: TextStyle(fontSize: 13, height: 1.5),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPrivacyDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Privacy Policy'),
+        content: const SingleChildScrollView(
+          child: Text(
+            'ElderCare AI Privacy Policy\n\n'
+            '1. Data Collection\n'
+            'We collect:\n'
+            '- Phone number for authentication\n'
+            '- SMS messages you choose to analyze\n'
+            '- Emergency contact information\n'
+            '- Health vitals you choose to track\n\n'
+            '2. Data Usage\n'
+            '- Scam detection and risk analysis\n'
+            '- Emergency alert services\n'
+            '- App functionality improvement\n\n'
+            '3. Data Storage\n'
+            'Data is stored securely and encrypted.\n\n'
+            '4. Data Sharing\n'
+            'We do not sell your data. Data is only shared:\n'
+            '- With emergency contacts during SOS\n'
+            '- As required by law\n\n'
+            '5. Your Rights\n'
+            'You can request data deletion at any time.\n\n'
+            'Last updated: February 2026',
+            style: TextStyle(fontSize: 13, height: 1.5),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Theme helpers ──
+  String _themeName(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.light:
+        return 'Light';
+      case ThemeMode.dark:
+        return 'Dark';
+      case ThemeMode.system:
+        return 'System';
+    }
+  }
+
+  IconData _themeIcon(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.light:
+        return Icons.wb_sunny_rounded;
+      case ThemeMode.dark:
+        return Icons.dark_mode_rounded;
+      case ThemeMode.system:
+        return Icons.settings_brightness_rounded;
+    }
+  }
+
+  // ── Edit Profile bottom sheet ──
+  void _showEditProfileSheet({String? tempImagePath}) {
+    final user = _auth.currentUser;
+    final profile = _healthProfile.profile;
+
+    // Use temp image if provided, otherwise fallback to existing
+    String? currentImage = tempImagePath ?? _profileImagePath;
+    final nameCtrl = TextEditingController(text: user?.name ?? '');
+    final phoneCtrl = TextEditingController(text: user?.phone ?? '');
+    final cityCtrl = TextEditingController(text: profile.city ?? '');
+    final addressCtrl = TextEditingController(text: profile.homeAddress ?? '');
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final cs = Theme.of(ctx).colorScheme;
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+                decoration: BoxDecoration(
+                  color: cs.surface,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(28),
+                  ),
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Handle bar
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: cs.onSurface.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Edit Profile',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Profile Image
+                      GestureDetector(
+                        onTap: () async {
+                          Navigator.pop(ctx);
+                          final path = await _pickProfileImage(
+                            saveImmediately: false,
+                          );
+                          if (mounted) {
+                            _showEditProfileSheet(
+                              tempImagePath: path ?? currentImage,
+                            );
+                          }
+                        },
+                        child: Stack(
+                          children: [
+                            Container(
+                              width: 80,
+                              height: 80,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    cs.primary,
+                                    cs.primary.withValues(alpha: 0.7),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(24),
+                                image: currentImage != null
+                                    ? DecorationImage(
+                                        image: FileImage(File(currentImage)),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : null,
+                              ),
+                              child: currentImage == null
+                                  ? Center(
+                                      child: Text(
+                                        (user?.name ?? 'U')[0].toUpperCase(),
+                                        style: const TextStyle(
+                                          fontSize: 30,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: cs.primary,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: cs.surface,
+                                    width: 2,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.camera_alt_rounded,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Name field
+                      TextField(
+                        controller: nameCtrl,
+                        style: TextStyle(color: cs.onSurface),
+                        decoration: InputDecoration(
+                          labelText: 'Full Name',
+                          prefixIcon: const Icon(Icons.person_rounded),
+                          filled: true,
+                          fillColor: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Phone field
+                      TextField(
+                        controller: phoneCtrl,
+                        keyboardType: TextInputType.phone,
+                        style: TextStyle(color: cs.onSurface),
+                        decoration: InputDecoration(
+                          labelText: 'Phone Number',
+                          prefixIcon: const Icon(Icons.phone_rounded),
+                          filled: true,
+                          fillColor: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // ── Editable DOB ──
+                      InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: ctx,
+                            initialDate:
+                                _healthProfile.profile.dateOfBirth ??
+                                DateTime(2000),
+                            firstDate: DateTime(1900),
+                            lastDate: DateTime.now(),
+                          );
+                          if (picked != null) {
+                            setSheetState(() {
+                              _healthProfile.profile = _healthProfile.profile
+                                  .copyWith(dateOfBirth: picked);
+                            });
+                          }
+                        },
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 16,
+                          ),
+                          decoration: BoxDecoration(
+                            color: cs.surfaceContainerHighest.withValues(
+                              alpha: 0.3,
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.cake_rounded,
+                                color: cs.onSurface.withValues(alpha: 0.7),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Date of Birth',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: cs.onSurface.withValues(
+                                          alpha: 0.6,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _healthProfile.profile.dateOfBirth != null
+                                          ? '${_healthProfile.profile.dateOfBirth!.day.toString().padLeft(2, '0')}/${_healthProfile.profile.dateOfBirth!.month.toString().padLeft(2, '0')}/${_healthProfile.profile.dateOfBirth!.year}'
+                                          : 'Tap to set',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        color:
+                                            _healthProfile
+                                                    .profile
+                                                    .dateOfBirth !=
+                                                null
+                                            ? cs.onSurface
+                                            : cs.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (_healthProfile.profile.dateOfBirth != null)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: cs.primary.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '${DateTime.now().year - _healthProfile.profile.dateOfBirth!.year} yrs',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: cs.primary,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // ── Editable Gender ──
+                      DropdownButtonFormField<String>(
+                        value:
+                            ['male', 'female', 'other'].contains(
+                              _healthProfile.profile.gender?.toLowerCase(),
+                            )
+                            ? _healthProfile.profile.gender?.toLowerCase()
+                            : null,
+                        items: ['male', 'female', 'other'].map((String g) {
+                          return DropdownMenuItem<String>(
+                            value: g,
+                            child: Text(g[0].toUpperCase() + g.substring(1)),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setSheetState(() {
+                              _healthProfile.profile = _healthProfile.profile
+                                  .copyWith(gender: val);
+                            });
+                          }
+                        },
+                        style: TextStyle(color: cs.onSurface, fontSize: 15),
+                        decoration: InputDecoration(
+                          labelText: 'Gender',
+                          prefixIcon: Icon(
+                            _healthProfile.profile.gender == 'female'
+                                ? Icons.female_rounded
+                                : _healthProfile.profile.gender == 'male'
+                                ? Icons.male_rounded
+                                : Icons.person_outline_rounded,
+                          ),
+                          filled: true,
+                          fillColor: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // ── City ──
+                      TextField(
+                        controller: cityCtrl,
+                        style: TextStyle(color: cs.onSurface),
+                        decoration: InputDecoration(
+                          labelText: 'City',
+                          prefixIcon: const Icon(Icons.location_city_rounded),
+                          filled: true,
+                          fillColor: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // ── Home Address ──
+                      TextField(
+                        controller: addressCtrl,
+                        style: TextStyle(color: cs.onSurface),
+                        maxLines: 2,
+                        decoration: InputDecoration(
+                          labelText: 'Home Address',
+                          hintText: 'Full address for emergency location',
+                          hintStyle: TextStyle(
+                            color: cs.onSurface.withValues(alpha: 0.3),
+                            fontSize: 13,
+                          ),
+                          prefixIcon: const Padding(
+                            padding: EdgeInsets.only(bottom: 20),
+                            child: Icon(Icons.home_rounded),
+                          ),
+                          filled: true,
+                          fillColor: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            // Save image if changed
+                            if (currentImage != null &&
+                                currentImage != _profileImagePath) {
+                              await _saveProfileImage(currentImage);
+                              _profileImagePath = currentImage;
+
+                              // Upload to cloud in background
+                              try {
+                                final bytes = await File(
+                                  currentImage,
+                                ).readAsBytes();
+                                final base64Image = base64Encode(bytes);
+                                await _api.uploadProfilePhoto(base64Image);
+                              } catch (e) {
+                                // Ignore
+                              }
+                            }
+
+                            // Save city, address, DOB & gender to health profile
+                            // By using _healthProfile.profile, we capture the live state
+                            // modified by DatePicker and Gender dropdown interactions.
+                            final updated = _healthProfile.profile.copyWith(
+                              city: cityCtrl.text.trim().isNotEmpty
+                                  ? cityCtrl.text.trim()
+                                  : null,
+                              homeAddress: addressCtrl.text.trim().isNotEmpty
+                                  ? addressCtrl.text.trim()
+                                  : null,
+                            );
+
+                            await _healthProfile.save(updated);
+                            // POST to cloud so data doesn't reset on account switch
+                            await _api.saveHealthProfile(updated.toJson());
+
+                            if (!ctx.mounted) return;
+                            Navigator.pop(ctx);
+
+                            if (!mounted) return;
+                            setState(() {}); // Refresh profile header
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.check_circle_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    SizedBox(width: 10),
+                                    Text('Profile successfully updated!'),
+                                  ],
+                                ),
+                                behavior: SnackBarBehavior.floating,
+                                backgroundColor: const Color(0xFF26A69A),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: cs.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Text(
+                            'Save Changes',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ── Change PIN bottom sheet ──
+  void _showChangePinSheet() {
+    final currentPinCtrl = TextEditingController();
+    final newPinCtrl = TextEditingController();
+    final confirmPinCtrl = TextEditingController();
+    bool obscureCurrent = true;
+    bool obscureNew = true;
+    bool obscureConfirm = true;
+    String? pinError;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final cs = Theme.of(ctx).colorScheme;
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+                decoration: BoxDecoration(
+                  color: cs.surface,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(28),
+                  ),
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: cs.onSurface.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.lock_rounded,
+                            color: cs.primary,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Change PIN',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Current PIN
+                      TextField(
+                        controller: currentPinCtrl,
+                        keyboardType: TextInputType.number,
+                        obscureText: obscureCurrent,
+                        style: TextStyle(color: cs.onSurface),
+                        decoration: InputDecoration(
+                          labelText: 'Current PIN',
+                          prefixIcon: const Icon(Icons.lock_outline_rounded),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureCurrent
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded,
+                            ),
+                            onPressed: () => setSheetState(
+                              () => obscureCurrent = !obscureCurrent,
+                            ),
+                          ),
+                          filled: true,
+                          fillColor: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // New PIN
+                      TextField(
+                        controller: newPinCtrl,
+                        keyboardType: TextInputType.number,
+                        obscureText: obscureNew,
+                        style: TextStyle(color: cs.onSurface),
+                        decoration: InputDecoration(
+                          labelText: 'New PIN (min 4 digits)',
+                          prefixIcon: const Icon(Icons.lock_rounded),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureNew
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded,
+                            ),
+                            onPressed: () =>
+                                setSheetState(() => obscureNew = !obscureNew),
+                          ),
+                          filled: true,
+                          fillColor: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Confirm PIN
+                      TextField(
+                        controller: confirmPinCtrl,
+                        keyboardType: TextInputType.number,
+                        obscureText: obscureConfirm,
+                        style: TextStyle(color: cs.onSurface),
+                        decoration: InputDecoration(
+                          labelText: 'Confirm New PIN',
+                          prefixIcon: const Icon(Icons.lock_rounded),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureConfirm
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded,
+                            ),
+                            onPressed: () => setSheetState(
+                              () => obscureConfirm = !obscureConfirm,
+                            ),
+                          ),
+                          filled: true,
+                          fillColor: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.3,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+
+                      if (pinError != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          pinError!,
+                          style: const TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            final currentPin = currentPinCtrl.text.trim();
+                            final newPin = newPinCtrl.text.trim();
+                            final confirmPin = confirmPinCtrl.text.trim();
+
+                            if (currentPin.isEmpty) {
+                              setSheetState(
+                                () => pinError = 'Enter your current PIN',
+                              );
+                              return;
+                            }
+                            if (newPin.length < 4) {
+                              setSheetState(
+                                () => pinError =
+                                    'New PIN must be at least 4 digits',
+                              );
+                              return;
+                            }
+                            if (newPin != confirmPin) {
+                              setSheetState(
+                                () => pinError = 'PINs do not match',
+                              );
+                              return;
+                            }
+
+                            // Change PIN via backend API
+                            final error = await _api.changePin(
+                              currentPin,
+                              newPin,
+                            );
+                            if (error != null) {
+                              setSheetState(() => pinError = error);
+                              return;
+                            }
+
+                            if (!ctx.mounted) return;
+                            Navigator.pop(ctx);
+
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.check_circle_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    SizedBox(width: 10),
+                                    Text('PIN changed successfully!'),
+                                  ],
+                                ),
+                                behavior: SnackBarBehavior.floating,
+                                backgroundColor: const Color(0xFF26A69A),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: cs.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Text(
+                            'Update PIN',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  BUILD
+  // ══════════════════════════════════════════════════════
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final user = _auth.currentUser;
+    final profile = _healthProfile.profile;
+    final completeness = profile.completeness;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Child Profile'),
+        centerTitle: true,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+      ),
+      body: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Profile Header ──
+            _buildProfileHeader(user, cs),
+            const SizedBox(height: 16),
+
+            // ── PERSONAL ──
+            _buildSectionTitle('Personal', cs),
+            const SizedBox(height: 10),
+            _buildActionTile(
+              icon: Icons.person_rounded,
+              title: 'Edit Profile',
+              subtitle: 'Name, age, gender & photo',
+              color: cs.primary,
+              cs: cs,
+              onTap: _showEditProfileSheet,
+            ),
+            _buildActionTile(
+              icon: Icons.emergency_rounded,
+              title: 'Manage Emergency Contacts',
+              subtitle: 'Add or edit your emergency contacts',
+              color: const Color(0xFFFF7043),
+              cs: cs,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ContactsScreen()),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // ── ACCOUNT SECURITY ──
+            _buildSectionTitle('Account Security', cs),
+            const SizedBox(height: 10),
+            _buildActionTile(
+              icon: Icons.lock_rounded,
+              title: 'Change PIN',
+              subtitle: 'Update your login PIN',
+              color: cs.primary,
+              cs: cs,
+              onTap: _showChangePinSheet,
+            ),
+
+            const SizedBox(height: 24),
+
+            // ── APP PREFERENCES ──
+            _buildSectionTitle('App Preferences', cs),
+            const SizedBox(height: 10),
+            _buildThemeSelector(cs),
+            const SizedBox(height: 8),
+            _buildFontSizeControl(cs),
+            const SizedBox(height: 8),
+            _buildToggleTile(
+              icon: Icons.notifications_rounded,
+              title: 'Push Notifications',
+              subtitle: 'Receive scam alerts and updates',
+              value: _settings.notifications,
+              color: cs.primary,
+              cs: cs,
+              onChanged: (v) => _settings.toggleNotifications(v),
+            ),
+            const SizedBox(height: 24),
+
+            // ── SAFETY ──
+            _buildSectionTitle('Safety', cs),
+            const SizedBox(height: 10),
+
+
+            _buildToggleTile(
+              icon: Icons.vibration_rounded,
+              title: 'Shake to SOS',
+              subtitle: 'Shake phone vigorously to trigger SOS',
+              value: _settings.shakeSosEnabled,
+              color: const Color(0xFFFFB300),
+              cs: cs,
+              onChanged: (v) => _settings.toggleShakeSos(v),
+            ),
+            const SizedBox(height: 24),
+
+            // ── ABOUT ──
+            _buildSectionTitle('About', cs),
+            const SizedBox(height: 10),
+            _buildActionTile(
+              icon: Icons.info_outline_rounded,
+              title: 'App Version',
+              subtitle: '1.0.0 (Beta)',
+              color: const Color(0xFF78909C),
+              cs: cs,
+              onTap: () {},
+              showChevron: false,
+            ),
+            _buildActionTile(
+              icon: Icons.description_rounded,
+              title: 'Terms of Service',
+              subtitle: 'View legal terms',
+              color: const Color(0xFF78909C),
+              cs: cs,
+              onTap: _showTermsDialog,
+            ),
+            _buildActionTile(
+              icon: Icons.privacy_tip_rounded,
+              title: 'Privacy Policy',
+              subtitle: 'How we handle your data',
+              color: const Color(0xFF78909C),
+              cs: cs,
+              onTap: _showPrivacyDialog,
+            ),
+            const SizedBox(height: 28),
+
+            // ── LOGOUT ──
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton.icon(
+                onPressed: _logout,
+                icon: const Icon(Icons.logout_rounded),
+                label: const Text(
+                  'Logout',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.withValues(alpha: 0.1),
+                  foregroundColor: Colors.redAccent,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(color: Colors.red.withValues(alpha: 0.2)),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  PROFILE COMPLETENESS BANNER
+  // ══════════════════════════════════════════════════════
+
+  Widget _buildCompletenessBanner(int completeness, ColorScheme cs) {
+    return GestureDetector(
+      onTap: _showEditProfileSheet,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              const Color(0xFFFFB300).withValues(alpha: 0.12),
+              const Color(0xFFFFA000).withValues(alpha: 0.06),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: const Color(0xFFFFB300).withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          children: [
+            // Circular progress
+            SizedBox(
+              width: 44,
+              height: 44,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  CircularProgressIndicator(
+                    value: completeness / 100,
+                    strokeWidth: 4,
+                    backgroundColor: const Color(
+                      0xFFFFB300,
+                    ).withValues(alpha: 0.2),
+                    valueColor: const AlwaysStoppedAnimation(Color(0xFFFFB300)),
+                  ),
+                  Text(
+                    '$completeness%',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFFFFB300),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Complete your profile',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Add missing details for better health insights',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: cs.onSurface.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: cs.onSurface.withValues(alpha: 0.3),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  PROFILE HEADER
+  // ══════════════════════════════════════════════════════
+
+  Widget _buildProfileHeader(UserProfile? user, ColorScheme cs) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) => Opacity(
+        opacity: value,
+        child: Transform.translate(
+          offset: Offset(0, 20 * (1 - value)),
+          child: child,
+        ),
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: LinearGradient(
+            colors: [
+              cs.primary.withValues(alpha: 0.12),
+              cs.surfaceContainerHighest,
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          border: Border.all(
+            color: cs.primary.withValues(alpha: 0.2),
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          children: [
+            // Avatar with image support
+            GestureDetector(
+              onTap: _pickProfileImage,
+              child: Stack(
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      gradient: _profileImagePath == null
+                          ? LinearGradient(
+                              colors: [cs.primary, isDark ? const Color(0xFF0288D1) : const Color(0xFF1B5E20)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            )
+                          : null,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: cs.primary.withValues(alpha: 0.3),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                      image: _profileImagePath != null
+                          ? DecorationImage(
+                              image: FileImage(File(_profileImagePath!)),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                    ),
+                    child: _profileImagePath == null
+                        ? Center(
+                            child: Text(
+                              (user?.name ?? 'U')[0].toUpperCase(),
+                              style: const TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          )
+                        : null,
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: cs.primary,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: cs.surface, width: 2),
+                      ),
+                      child: const Icon(
+                        Icons.camera_alt_rounded,
+                        size: 14,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Name
+            Text(
+              user?.name ?? 'User',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 4),
+
+            // Phone
+            Text(
+              user?.phone ?? 'N/A',
+              style: TextStyle(
+                fontSize: 14,
+                color: cs.onSurface.withValues(alpha: 0.5),
+              ),
+            ),
+
+            // City (if set)
+            if (_healthProfile.profile.city != null &&
+                _healthProfile.profile.city!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.location_on_rounded,
+                    size: 14,
+                    color: cs.onSurface.withValues(alpha: 0.4),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _healthProfile.profile.city!,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: cs.onSurface.withValues(alpha: 0.45),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 10),
+
+            // Role badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              decoration: BoxDecoration(
+                color: cs.primary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                user?.role.name.toUpperCase() ?? 'USER',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: cs.primary,
+                  letterSpacing: 1,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  SECTION TITLE
+  // ══════════════════════════════════════════════════════
+
+  Widget _buildSectionTitle(String title, ColorScheme cs) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          color: cs.onSurface.withValues(alpha: 0.5),
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  THEME SELECTOR
+  // ══════════════════════════════════════════════════════
+
+  Widget _buildThemeSelector(ColorScheme cs) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: Theme.of(context).brightness == Brightness.light
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                )
+              ]
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                _themeIcon(_settings.themeMode),
+                color: cs.primary,
+                size: 22,
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Theme',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      'Choose your preferred look',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              for (final mode in ThemeMode.values) ...[
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      right: mode != ThemeMode.dark ? 8 : 0,
+                    ),
+                    child: _buildThemeOption(mode, cs),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildThemeOption(ThemeMode mode, ColorScheme cs) {
+    final isSelected = _settings.themeMode == mode;
+    return GestureDetector(
+      onTap: () => _settings.updateThemeMode(mode),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? cs.primary.withValues(alpha: 0.15)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected
+                ? cs.primary
+                : cs.outline.withValues(alpha: 0.15),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              _themeIcon(mode),
+              size: 20,
+              color: isSelected
+                  ? cs.primary
+                  : cs.onSurface.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _themeName(mode),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected
+                    ? cs.primary
+                    : cs.onSurface.withValues(alpha: 0.6),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  FONT SIZE SLIDER
+  // ══════════════════════════════════════════════════════
+
+  Widget _buildFontSizeControl(ColorScheme cs) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: Theme.of(context).brightness == Brightness.light
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                )
+              ]
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.text_fields_rounded,
+                color: cs.primary,
+                size: 22,
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Font Size',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      'Adjust text size across the app',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: cs.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${(_settings.fontScale * 100).toInt()}%',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: cs.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Text(
+                'A',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: cs.primary,
+                    inactiveTrackColor: cs.primary.withValues(alpha: 0.2),
+                    thumbColor: cs.primary,
+                    overlayColor: cs.primary.withValues(alpha: 0.1),
+                    trackHeight: 4,
+                  ),
+                  child: Slider(
+                    value: _settings.fontScale,
+                    min: 0.8,
+                    max: 1.4,
+                    divisions: 6,
+                    onChanged: (value) => _settings.updateFontScale(value),
+                  ),
+                ),
+              ),
+              const Text(
+                'A',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: cs.surface,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              'Preview: This is how your text will look',
+              style: TextStyle(fontSize: 14 * _settings.fontScale, height: 1.4),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  REUSABLE TILES
+  // ══════════════════════════════════════════════════════
+
+  Widget _buildToggleTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required Color color,
+    required ColorScheme cs,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: Theme.of(context).brightness == Brightness.light
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                )
+              ]
+            : null,
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: cs.onSurface.withValues(alpha: 0.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch.adaptive(
+            value: value,
+            onChanged: onChanged,
+            activeTrackColor: color,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required ColorScheme cs,
+    required VoidCallback onTap,
+    bool showChevron = true,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: cs.surface,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: Theme.of(context).brightness == Brightness.light
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    )
+                  ]
+                : null,
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: color, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: cs.onSurface.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (showChevron)
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: cs.onSurface.withValues(alpha: 0.3),
+                  size: 20,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubToggle({
+    required IconData icon,
+    required String title,
+    required bool value,
+    required Color color,
+    required ColorScheme cs,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 24, bottom: 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Switch.adaptive(
+              value: value,
+              onChanged: onChanged,
+              activeTrackColor: color,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
