@@ -56,7 +56,7 @@ class ElevenLabsService {
   ///
   /// Returns raw MP3 [Uint8List] on success.
   /// Throws [ElevenLabsException] with a typed [ElevenLabsFailReason] on failure.
-  Future<Uint8List> synthesize(String text) async {
+  Future<Uint8List> synthesize(String text, {bool isMale = false}) async {
     if (!isConfigured) {
       throw const ElevenLabsException(
         ElevenLabsFailReason.notConfigured,
@@ -87,7 +87,7 @@ class ElevenLabsService {
     try {
       final response = await http
           .post(
-            Uri.parse(ApiConfig.elevenLabsEndpoint),
+            Uri.parse(ApiConfig.elevenLabsEndpoint(isMale)),
             headers: {
               'xi-api-key': ApiConfig.elevenLabsApiKey,
               'Content-Type': 'application/json',
@@ -129,7 +129,7 @@ class ElevenLabsService {
 
           AppLogger.info(
             LogCategory.lifecycle,
-            '[VOICE] ElevenLabs success — voice=${ApiConfig.elevenLabsVoiceId}, '
+            '[VOICE] ElevenLabs success — voice=${isMale ? ApiConfig.elevenLabsMaleVoiceId : ApiConfig.elevenLabsFemaleVoiceId}, '
             '${bytes.length} bytes, ${elapsed}ms',
           );
           return bytes;

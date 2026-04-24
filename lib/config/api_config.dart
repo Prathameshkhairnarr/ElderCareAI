@@ -82,17 +82,22 @@ class ApiConfig {
   static final String elevenLabsApiKey = dotenv.env['ELEVENLABS_API_KEY'] ?? '';
 
   // Voice ID — Charlotte: warm, sweet female voice for Hindi + English.
-  static const String elevenLabsVoiceId = 'XB0fDUnXU5powFXDhCwa';
+  static const String elevenLabsFemaleVoiceId = 'XB0fDUnXU5powFXDhCwa';
+  
+  // Voice ID — Charlie: casual, natural, conversational male voice.
+  static const String elevenLabsMaleVoiceId = 'IKne3meq5aSn9XLyUdCD';
 
-  // Model: multilingual v2 supports Hindi + English.
+  // Model: multilingual v2 supports Hindi + English natively.
   static const String elevenLabsModel = 'eleven_multilingual_v2';
 
   /// Whether ElevenLabs is configured with a real API key.
   static bool get isElevenLabsEnabled => elevenLabsApiKey.isNotEmpty;
 
   /// ElevenLabs TTS endpoint.
-  static String get elevenLabsEndpoint =>
-      'https://api.elevenlabs.io/v1/text-to-speech/$elevenLabsVoiceId';
+  static String elevenLabsEndpoint(bool isMale) {
+    final voiceId = isMale ? elevenLabsMaleVoiceId : elevenLabsFemaleVoiceId;
+    return 'https://api.elevenlabs.io/v1/text-to-speech/$voiceId';
+  }
 
   // ── APILayer Number Verification API ──
   static final String abstractPhoneApiKey =

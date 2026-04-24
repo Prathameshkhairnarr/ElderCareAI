@@ -10,7 +10,7 @@ import 'voice_controller.dart' show VoiceState;
 
 class ChildVoiceController extends ChangeNotifier {
   final SpeechService _stt = SpeechService();
-  final VoiceEngine _voiceEngine = VoiceEngine();
+  final VoiceEngine _voiceEngine = VoiceEngine(isMaleVoice: true);
   final ChildBrainService _ai = ChildBrainService.instance;
 
   VoiceState _state = VoiceState.idle;
@@ -59,7 +59,7 @@ class ChildVoiceController extends ChangeNotifier {
     final ready = await _ensureInit();
     if (!ready) return;
 
-    const greeting = 'Hey Buddy! Main tumhara AI dost hu. Batao, aaj kya plan hai?';
+    const greeting = 'Aur bhai kya chal raha hai? Main tera naya AI best friend. Bata, kya scene hai aaj ka?';
     _response = greeting;
     _setState(VoiceState.speaking);
 

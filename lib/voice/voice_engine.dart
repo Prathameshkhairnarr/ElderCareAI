@@ -41,6 +41,10 @@ class VoiceEngine {
   final GoogleTtsService _googleTts = GoogleTtsService.instance;
   final AudioPlayer _audioPlayer = AudioPlayer();
 
+  final bool isMaleVoice;
+
+  VoiceEngine({this.isMaleVoice = false});
+
   bool _initialized = false;
   bool _isSpeaking = false;
 
@@ -135,31 +139,57 @@ class VoiceEngine {
     _totalCalls++;
     _isSpeaking = true;
 
-    // ── Try Azure first (primary — best Hindi female voice) ──
-    if (_azureTts.isConfigured) {
-      final success = await _tryAzure(text, locale);
-      if (success) {
-        _isSpeaking = false;
-        return;
+    if (isMaleVoice) {
+      // ── 1st Priority for AI Buddy: ElevenLabs ──
+      if (_elevenLabs.isConfigured) {
+        final elevenLabsText = _lightCleanForElevenLabs(text);
+        final success = await _tryElevenLabs(elevenLabsText);
+        if (success) {
+          _isSpeaking = false;
+          return;
+        }
       }
-    }
-
-    // ── Try Google TTS second (fallback fallback if Azure fails) ──
-    if (_googleTts.isConfigured) {
-      final success = await _tryGoogleTts(text, locale);
-      if (success) {
-        _isSpeaking = false;
-        return;
+      // ── 2nd Priority: Azure ──
+      if (_azureTts.isConfigured) {
+        final success = await _tryAzure(text, locale);
+        if (success) {
+          _isSpeaking = false;
+          return;
+        }
       }
-    }
-
-    // ── Try ElevenLabs second (light cleanup — AI handles Hindi natively) ──
-    if (_elevenLabs.isConfigured) {
-      final elevenLabsText = _lightCleanForElevenLabs(text);
-      final success = await _tryElevenLabs(elevenLabsText);
-      if (success) {
-        _isSpeaking = false;
-        return;
+      // ── 3rd Priority: Google ──
+      if (_googleTts.isConfigured) {
+        final success = await _tryGoogleTts(text, locale);
+        if (success) {
+          _isSpeaking = false;
+          return;
+        }
+      }
+    } else {
+      // ── 1st Priority for AI Doctor: Azure ──
+      if (_azureTts.isConfigured) {
+        final success = await _tryAzure(text, locale);
+        if (success) {
+          _isSpeaking = false;
+          return;
+        }
+      }
+      // ── 2nd Priority: Google ──
+      if (_googleTts.isConfigured) {
+        final success = await _tryGoogleTts(text, locale);
+        if (success) {
+          _isSpeaking = false;
+          return;
+        }
+      }
+      // ── 3rd Priority: ElevenLabs ──
+      if (_elevenLabs.isConfigured) {
+        final elevenLabsText = _lightCleanForElevenLabs(text);
+        final success = await _tryElevenLabs(elevenLabsText);
+        if (success) {
+          _isSpeaking = false;
+          return;
+        }
       }
     }
 
@@ -211,31 +241,57 @@ class VoiceEngine {
     _totalCalls++;
     _isSpeaking = true;
 
-    // ── Try Azure first (neural voice handles emotion naturally) ──
-    if (_azureTts.isConfigured) {
-      final success = await _tryAzure(text, locale);
-      if (success) {
-        _isSpeaking = false;
-        return;
+    if (isMaleVoice) {
+      // ── 1st Priority for AI Buddy: ElevenLabs ──
+      if (_elevenLabs.isConfigured) {
+        final elevenLabsText = _lightCleanForElevenLabs(text);
+        final success = await _tryElevenLabs(elevenLabsText);
+        if (success) {
+          _isSpeaking = false;
+          return;
+        }
       }
-    }
-
-    // ── Try Google TTS second (fallback fallback if Azure fails) ──
-    if (_googleTts.isConfigured) {
-      final success = await _tryGoogleTts(text, locale);
-      if (success) {
-        _isSpeaking = false;
-        return;
+      // ── 2nd Priority: Azure ──
+      if (_azureTts.isConfigured) {
+        final success = await _tryAzure(text, locale);
+        if (success) {
+          _isSpeaking = false;
+          return;
+        }
       }
-    }
-
-    // ── Try ElevenLabs second ──
-    if (_elevenLabs.isConfigured) {
-      final elevenLabsText = _lightCleanForElevenLabs(text);
-      final success = await _tryElevenLabs(elevenLabsText);
-      if (success) {
-        _isSpeaking = false;
-        return;
+      // ── 3rd Priority: Google ──
+      if (_googleTts.isConfigured) {
+        final success = await _tryGoogleTts(text, locale);
+        if (success) {
+          _isSpeaking = false;
+          return;
+        }
+      }
+    } else {
+      // ── 1st Priority for AI Doctor: Azure ──
+      if (_azureTts.isConfigured) {
+        final success = await _tryAzure(text, locale);
+        if (success) {
+          _isSpeaking = false;
+          return;
+        }
+      }
+      // ── 2nd Priority: Google ──
+      if (_googleTts.isConfigured) {
+        final success = await _tryGoogleTts(text, locale);
+        if (success) {
+          _isSpeaking = false;
+          return;
+        }
+      }
+      // ── 3rd Priority: ElevenLabs ──
+      if (_elevenLabs.isConfigured) {
+        final elevenLabsText = _lightCleanForElevenLabs(text);
+        final success = await _tryElevenLabs(elevenLabsText);
+        if (success) {
+          _isSpeaking = false;
+          return;
+        }
       }
     }
 
@@ -267,7 +323,9 @@ class VoiceEngine {
         ? DetectedLanguage.hindi
         : DetectedLanguage.english;
     final ssmlLang = LanguageDetector.azureSsmlLang(detectedLang);
-    final voiceName = LanguageDetector.azureVoiceName(detectedLang);
+    final voiceName = isMaleVoice
+        ? (detectedLang == DetectedLanguage.hindi ? 'hi-IN-MadhurNeural' : 'en-IN-PrabhatNeural')
+        : LanguageDetector.azureVoiceName(detectedLang);
 
     try {
       AppLogger.info(
@@ -322,7 +380,13 @@ class VoiceEngine {
   Future<bool> _tryGoogleTts(String text, String locale) async {
     final stopwatch = Stopwatch()..start();
     final lang = locale.startsWith('hi') ? 'hi-IN' : 'en-US';
-    final voice = locale.startsWith('hi') ? ApiConfig.googleVoiceName : 'en-US-Neural2-F';
+    
+    String voice;
+    if (isMaleVoice) {
+      voice = locale.startsWith('hi') ? 'hi-IN-Neural2-C' : 'en-IN-Neural2-B';
+    } else {
+      voice = locale.startsWith('hi') ? ApiConfig.googleVoiceName : 'en-US-Neural2-F';
+    }
 
     try {
       AppLogger.info(
@@ -377,11 +441,11 @@ class VoiceEngine {
     try {
       AppLogger.info(
         LogCategory.lifecycle,
-        '[VOICE] Using ElevenLabs voice=${ApiConfig.elevenLabsVoiceId} — '
+        '[VOICE] Using ElevenLabs male=$isMaleVoice — '
         '"${text.length > 50 ? '${text.substring(0, 50)}...' : text}"',
       );
 
-      final audioBytes = await _elevenLabs.synthesize(text);
+      final audioBytes = await _elevenLabs.synthesize(text, isMale: isMaleVoice);
       stopwatch.stop();
 
       // ── Play the audio ──
