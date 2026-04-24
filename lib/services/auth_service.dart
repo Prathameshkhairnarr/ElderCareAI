@@ -257,7 +257,7 @@ class AuthService {
     return false;
   }
 
-  // ── Reset PIN (OLD — kept for backward compat) ───────
+  // ── Reset PIN ────────────────────────────────────────
   Future<bool> resetPin(String phone, String newPin) async {
     try {
       final normalizedPhone = AuthService.normalizePhone(phone);
@@ -299,75 +299,6 @@ class AuthService {
     } catch (e) {
       if (e.toString().contains('Exception:')) rethrow;
       throw Exception('Failed to reset PIN: $e');
-    }
-  }
-
-  // ── Send OTP (Fast2SMS with Fallback) ────────────────
-  /// Step 1: Requests OTP to be sent to the phone number.
-  /// Returns true if accepted (regardless of SMS/fallback mode).
-  Future<({bool sent, bool fallback, String message})> sendOtp(String phone) async {
-    try {
-      final normalizedPhone = AuthService.normalizePhone(phone);
-      final response = await http
-          .post(
-            Uri.parse('$_baseUrl/auth/otp/send'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'phone': normalizedPhone}),
-          )
-          .timeout(const Duration(seconds: 15));
-
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200) {
-        return (
-          sent: data['sent'] as bool? ?? false,
-          fallback: data['fallback'] as bool? ?? false,
-          message: data['message'] as String? ?? 'OTP sent',
-        );
-      } else {
-        final detail = data['detail'] ?? 'Failed to send OTP';
-        throw Exception('$detail');
-      }
-    } on http.ClientException catch (_) {
-      throw Exception('Cannot reach server. Check your connection.');
-    } catch (e) {
-      if (e.toString().contains('Exception:')) rethrow;
-      throw Exception('Failed to send OTP: $e');
-    }
-  }
-
-  // ── Verify OTP + Reset PIN ────────────────────────────
-  /// Step 2: Verifies OTP and resets PIN atomically.
-  Future<bool> verifyOtpAndResetPin({
-    required String phone,
-    required String otp,
-    required String newPin,
-  }) async {
-    try {
-      final normalizedPhone = AuthService.normalizePhone(phone);
-      final response = await http
-          .post(
-            Uri.parse('$_baseUrl/auth/otp/verify-reset'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'phone': normalizedPhone,
-              'otp': otp,
-              'new_pin': newPin,
-            }),
-          )
-          .timeout(const Duration(seconds: 15));
-
-      if (response.statusCode == 200) {
-        return true;
-      } else {
-        final data = jsonDecode(response.body);
-        final detail = data['detail'] ?? 'OTP verification failed';
-        throw Exception('$detail');
-      }
-    } on http.ClientException catch (_) {
-      throw Exception('Cannot reach server. Check your connection.');
-    } catch (e) {
-      if (e.toString().contains('Exception:')) rethrow;
-      throw Exception('Failed to verify OTP: $e');
     }
   }
 

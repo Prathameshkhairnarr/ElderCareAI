@@ -10,4 +10,3 @@ python-multipart
 firebase-admin
 scikit-learn
 psycopg2-binary
-requests
