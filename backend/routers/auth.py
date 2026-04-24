@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 
 from database.engine import get_db
 from database.models import User
-from schemas.schemas import RegisterRequest, TokenResponse, UserOut, ChangePinRequest, ProfilePhotoRequest
+from schemas.schemas import RegisterRequest, TokenResponse, UserOut, ChangePinRequest, ProfilePhotoRequest, SendOtpRequest, VerifyOtpResetRequest
 from services.auth_service import hash_password, verify_password, create_access_token, get_current_user
+from services.otp_service import send_otp, verify_otp, is_fallback_mode
 from utils.phone_utils import normalize_phone
 
 logger = logging.getLogger("eldercare")
@@ -164,3 +165,86 @@ def reset_pin(
     logger.info(f"PIN reset executed for phone {normalized_phone}")
 
     return {"status": "success", "message": "PIN reset successfully. You can now login with your new PIN."}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NEW: 2-Step OTP Reset (Fast2SMS with fallback)
+# Existing /reset-pin above is kept intact for backward compatibility
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/otp/send")
+def otp_send(
+    body: SendOtpRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Step 1 — Send OTP to the phone number.
+    Uses Fast2SMS if configured, silently falls back to console log (dev/demo).
+    Existing users are never modified here.
+    """
+    normalized_phone = normalize_phone(body.phone)
+
+    # Check user exists (don't reveal if not found — security)
+    user = db.query(User).filter(User.phone == normalized_phone).first()
+    if not user or not user.is_active:
+        # Return generic success to prevent phone enumeration attacks
+        return {
+            "status": "success",
+            "message": "If this number is registered, an OTP will be sent.",
+            "fallback": False,
+        }
+
+    result = send_otp(normalized_phone)
+    logger.info(f"OTP send result for phone ending {normalized_phone[-4:]}: sent={result['sent']}, fallback={result['fallback']}")
+
+    return {
+        "status": "success",
+        "message": result["message"],
+        "fallback": result["fallback"],  # Flutter can show hint if fallback
+    }
+
+
+@router.post("/otp/verify-reset")
+def otp_verify_reset(
+    body: VerifyOtpResetRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Step 2 — Verify OTP and reset PIN atomically.
+    Falls back gracefully if OTP service had issues.
+    Existing users and their data are NEVER deleted.
+    """
+    normalized_phone = normalize_phone(body.phone)
+
+    user = db.query(User).filter(User.phone == normalized_phone).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="No account found with this phone number")
+
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Account is deactivated. Contact support.")
+
+    # ── OTP Verification ──
+    otp_valid = verify_otp(normalized_phone, body.otp)
+
+    if not otp_valid:
+        # Fallback mode check: if Fast2SMS was unavailable, be lenient in DEV only
+        if is_fallback_mode():
+            logger.warning(
+                f"[FALLBACK MODE] OTP mismatch for {normalized_phone[-4:]} — "
+                "Fast2SMS not configured. Check server logs for OTP."
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid or expired OTP. (Dev mode: check server logs for OTP)",
+            )
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP. Please request a new one.")
+
+    # ✅ OTP valid — reset PIN
+    user.password_hash = hash_password(body.new_pin)
+    db.commit()
+    logger.info(f"PIN reset via OTP for user {user.id}")
+
+    return {
+        "status": "success",
+        "message": "PIN reset successfully. You can now login with your new PIN.",
+    }

@@ -51,6 +51,20 @@ class ResetPinRequest(BaseModel):
     new_pin: str = Field(..., min_length=4)
 
 
+# ── OTP (Fast2SMS + Fallback) ──────────────────────────
+
+class SendOtpRequest(BaseModel):
+    """Step 1: Request OTP to be sent to phone."""
+    phone: str = Field(..., min_length=10, max_length=20)
+
+
+class VerifyOtpResetRequest(BaseModel):
+    """Step 2: Verify OTP + set new PIN in one call."""
+    phone: str = Field(..., min_length=10, max_length=20)
+    otp: str = Field(..., min_length=4, max_length=8)
+    new_pin: str = Field(..., min_length=4)
+
+
 class ProfilePhotoRequest(BaseModel):
     photo: str = Field(..., min_length=1)  # Base64 encoded image
 
