@@ -197,7 +197,7 @@ def get_elder_alerts(
 @router.get("/guardian/elder/{elder_id}/scam_logs", response_model=List[guardian_schemas.ScamLogOut])
 def get_elder_scam_logs(
     elder_id: int,
-    current_user: User = Depends(auth.get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
