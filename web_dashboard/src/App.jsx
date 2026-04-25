@@ -38,6 +38,12 @@ function App() {
   const [fetchingScams, setFetchingScams] = useState(false);
   const [selectedScamElderId, setSelectedScamElderId] = useState(null);
 
+  // Add Profile State
+  const [showAddProfileModal, setShowAddProfileModal] = useState(false);
+  const [newProfilePhone, setNewProfilePhone] = useState('');
+  const [addProfileLoading, setAddProfileLoading] = useState(false);
+  const [addProfileError, setAddProfileError] = useState('');
+
   // Fetch Dashboard Data
   useEffect(() => {
     if (token) {
@@ -114,6 +120,25 @@ function App() {
       setError(err.response?.data?.detail || 'Login failed. Check your Phone and PIN.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAddProfile = async (e) => {
+    e.preventDefault();
+    setAddProfileLoading(true);
+    setAddProfileError('');
+
+    try {
+      await axios.post(`${API_BASE_URL}/guardian/link`, { elder_phone: newProfilePhone }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setShowAddProfileModal(false);
+      setNewProfilePhone('');
+      fetchDashboard(); // Refresh dashboard to show the new profile
+    } catch (err) {
+      setAddProfileError(err.response?.data?.detail || 'Failed to link profile. Make sure they have installed the app.');
+    } finally {
+      setAddProfileLoading(false);
     }
   };
 
@@ -377,7 +402,7 @@ function App() {
               <div>
                 <div className="section-title">
                   <span>Manage Monitored Profiles</span>
-                  <button className="btn-primary">
+                  <button className="btn-primary" onClick={() => setShowAddProfileModal(true)}>
                     <Plus size={18} /> Add New Profile
                   </button>
                 </div>
@@ -571,6 +596,40 @@ function App() {
           </>
         )}
       </main>
+
+      {/* Add Profile Modal */}
+      {showAddProfileModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div className="stat-card" style={{ width: '400px', padding: '30px' }}>
+            <h2 style={{ marginBottom: '20px' }}>Link New Profile</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '20px' }}>
+              Enter the phone number of the elder/child you want to monitor. They must have an account on the ElderCareAI mobile app first.
+            </p>
+            
+            {addProfileError && <div style={{ color: 'var(--danger)', marginBottom: '15px', fontSize: '14px' }}>{addProfileError}</div>}
+            
+            <form onSubmit={handleAddProfile} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              <div>
+                <label style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '8px', display: 'block' }}>Phone Number</label>
+                <input 
+                  type="text" 
+                  value={newProfilePhone}
+                  onChange={(e) => setNewProfilePhone(e.target.value)}
+                  placeholder="e.g. 9876543210"
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--card-border)', color: 'white' }}
+                  required
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button type="button" className="btn-secondary" style={{ flex: 1 }} onClick={() => setShowAddProfileModal(false)}>Cancel</button>
+                <button type="submit" className="btn-primary" style={{ flex: 1, justifyContent: 'center' }} disabled={addProfileLoading}>
+                  {addProfileLoading ? <Loader className="animate-spin" size={18} /> : 'Link Profile'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

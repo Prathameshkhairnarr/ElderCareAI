@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database.engine import get_db
-from database.models import User, ProcessedMessage, RiskState
+from database.models import User, ProcessedMessage, RiskState, SmsAnalysis
 from schemas.schemas import RiskResponse, SmsRiskEvent
 from services.auth_service import get_current_user
 from services.risk_service import get_current_risk, resolve_risk
@@ -86,6 +86,35 @@ def handle_sms_event(
         # 2. Store Message Metadata
         new_msg = ProcessedMessage(msg_hash=event.message_hash, label=event.label)
         db.add(new_msg)
+
+        # 2.5 ALSO create SmsAnalysis record so Guardian Dashboard Fraud Monitor can see it
+        is_scam = event.label != "SAFE"
+        label_to_category = {
+            "SCAM": "financial_scam",
+            "PHISHING_LINK": "phishing_link",
+            "SAFE": "safe",
+        }
+        label_to_confidence = {
+            "SCAM": 80,
+            "PHISHING_LINK": 90,
+            "SAFE": 5,
+        }
+        label_to_explanation = {
+            "SCAM": f"Scam SMS detected from {event.sender}. This message contains fraudulent content.",
+            "PHISHING_LINK": f"Dangerous phishing link detected from {event.sender}. Do not click any links in this message.",
+            "SAFE": "Message appears safe.",
+        }
+
+        sms_record = SmsAnalysis(
+            user_id=current_user.id,
+            message=event.content,
+            content_hash=event.message_hash,
+            is_scam=is_scam,
+            confidence=label_to_confidence.get(event.label, 50),
+            category=label_to_category.get(event.label, "unknown"),
+            explanation=label_to_explanation.get(event.label, "Analyzed by on-device AI."),
+        )
+        db.add(sms_record)
 
         # 3. Apply Risk Formula
         profile = db.query(RiskState).filter_by(user_id=current_user.id).first()
