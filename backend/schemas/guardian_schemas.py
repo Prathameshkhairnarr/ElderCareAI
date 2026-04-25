@@ -46,3 +46,6 @@ class ScamLogOut(BaseModel):
     category: str
     explanation: str
     created_at: datetime
+
+class LinkElderRequest(BaseModel):
+    elder_phone: str

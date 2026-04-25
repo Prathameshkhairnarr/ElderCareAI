@@ -60,6 +60,49 @@ def add_guardian(
     db.refresh(new_guardian)
     return new_guardian
 
+@router.post("/guardian/link", response_model=guardian_schemas.GuardianResponse, status_code=status.HTTP_201_CREATED)
+def link_elder(
+    req: guardian_schemas.LinkElderRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Link an existing Elder profile to the current Guardian."""
+    normalized_elder_phone = normalize_phone(req.elder_phone)
+    elder = db.query(User).filter(User.phone == normalized_elder_phone).first()
+    
+    if not elder:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User with this phone number not found. They must install the app first."
+        )
+    
+    normalized_guardian_phone = normalize_phone(current_user.phone)
+    existing = (
+        db.query(Guardian)
+        .filter(Guardian.user_id == elder.id, Guardian.phone == normalized_guardian_phone)
+        .first()
+    )
+    
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You are already linked to this profile."
+        )
+        
+    new_guardian = Guardian(
+        user_id=elder.id,
+        name=current_user.name,
+        phone=normalized_guardian_phone,
+        email=current_user.email,
+        is_primary=False
+    )
+    
+    db.add(new_guardian)
+    db.commit()
+    db.refresh(new_guardian)
+    return new_guardian
+
+
 
 @router.get("/guardians", response_model=List[guardian_schemas.GuardianResponse])
 def get_guardians(
