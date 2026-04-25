@@ -218,8 +218,8 @@ def get_elder_scam_logs(
 
     from database.models import SmsAnalysis, CallAnalysis
 
-    sms_logs = db.query(SmsAnalysis).filter(SmsAnalysis.user_id == elder_id, SmsAnalysis.is_scam == True).order_by(SmsAnalysis.created_at.desc()).limit(20).all()
-    call_logs = db.query(CallAnalysis).filter(CallAnalysis.user_id == elder_id, CallAnalysis.is_scam == True).order_by(CallAnalysis.created_at.desc()).limit(20).all()
+    sms_logs = db.query(SmsAnalysis).filter(SmsAnalysis.user_id == elder_id).order_by(SmsAnalysis.created_at.desc()).limit(20).all()
+    call_logs = db.query(CallAnalysis).filter(CallAnalysis.user_id == elder_id).order_by(CallAnalysis.created_at.desc()).limit(20).all()
 
     logs = []
     for s in sms_logs:
