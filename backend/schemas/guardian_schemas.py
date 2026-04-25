@@ -28,6 +28,7 @@ class ElderStats(BaseModel):
     elder_id: int
     elder_name: str
     elder_phone: str
+    elder_photo: Optional[str] = None
     risk_score: int
     last_sos_at: Optional[datetime]
     unread_alerts_count: int
@@ -35,3 +36,13 @@ class ElderStats(BaseModel):
 
 class GuardianDashboardResponse(BaseModel):
     elders: List[ElderStats]
+
+class ScamLogOut(BaseModel):
+    id: int
+    type: str
+    content: str
+    is_scam: bool
+    confidence: int
+    category: str
+    explanation: str
+    created_at: datetime

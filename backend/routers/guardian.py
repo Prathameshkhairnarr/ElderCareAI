@@ -149,6 +149,7 @@ def get_guardian_dashboard(
                 elder_id=elder.id,
                 elder_name=elder.name,
                 elder_phone=elder.phone,
+                elder_photo=elder.profile_photo,
                 risk_score=risk_score,
                 last_sos_at=last_sos_at,
                 unread_alerts_count=unread_count,
@@ -192,3 +193,39 @@ def get_elder_alerts(
     )
     
     return [schemas.AlertOut.model_validate(a) for a in alerts]
+
+@router.get("/guardian/elder/{elder_id}/scam_logs", response_model=List[guardian_schemas.ScamLogOut])
+def get_elder_scam_logs(
+    elder_id: int,
+    current_user: User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get identified scam calls and SMS for a specific Elder.
+    """
+    normalized_phone = normalize_phone(current_user.phone)
+    guardian_entry = (
+        db.query(Guardian)
+        .filter(Guardian.user_id == elder_id, Guardian.phone == normalized_phone)
+        .first()
+    )
+    
+    if not guardian_entry:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a guardian for this elder.",
+        )
+
+    from database.models import SmsAnalysis, CallAnalysis
+
+    sms_logs = db.query(SmsAnalysis).filter(SmsAnalysis.user_id == elder_id, SmsAnalysis.is_scam == True).order_by(SmsAnalysis.created_at.desc()).limit(20).all()
+    call_logs = db.query(CallAnalysis).filter(CallAnalysis.user_id == elder_id, CallAnalysis.is_scam == True).order_by(CallAnalysis.created_at.desc()).limit(20).all()
+
+    logs = []
+    for s in sms_logs:
+        logs.append(guardian_schemas.ScamLogOut(id=s.id, type="sms", content=s.message, is_scam=s.is_scam, confidence=s.confidence, category=s.category or "Unknown", explanation=s.explanation or "", created_at=s.created_at))
+    for c in call_logs:
+        logs.append(guardian_schemas.ScamLogOut(id=c.id, type="call", content=c.transcript or "Call Recording", is_scam=c.is_scam, confidence=c.confidence, category=c.category or "Unknown", explanation=c.explanation or "", created_at=c.created_at))
+    
+    logs.sort(key=lambda x: x.created_at, reverse=True)
+    return logs
