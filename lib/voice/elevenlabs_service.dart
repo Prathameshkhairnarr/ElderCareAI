@@ -42,7 +42,7 @@ class ElevenLabsService {
   static final ElevenLabsService instance = ElevenLabsService._();
 
   /// Timeout for API requests — triggers fallback if exceeded.
-  static const _requestTimeout = Duration(seconds: 6);
+  static const _requestTimeout = Duration(seconds: 12);
 
   /// LRU cache: text hash → MP3 bytes.
   /// Avoids re-fetching audio for repeated phrases like greetings.
@@ -97,12 +97,12 @@ class ElevenLabsService {
               'text': text,
               'model_id': ApiConfig.elevenLabsModel,
               'voice_settings': {
-                // Stability: 0.6 for natural expressiveness
-                'stability': 0.6,
+                // Stability: higher for clearer Hindi pronunciation
+                'stability': 0.7,
                 // Similarity boost: close to original voice
-                'similarity_boost': 0.75,
+                'similarity_boost': 0.80,
                 // Style: subtle expressiveness for warmth
-                'style': 0.35,
+                'style': 0.25,
                 // Speaker boost for clarity
                 'use_speaker_boost': true,
               },

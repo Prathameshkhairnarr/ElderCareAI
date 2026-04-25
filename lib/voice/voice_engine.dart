@@ -414,7 +414,8 @@ class VoiceEngine {
   //  ELEVENLABS ENGINE
   // ══════════════════════════════════════════════════════
 
-  /// Light text cleanup for ElevenLabs — only remove emojis and collapse spaces.
+  /// Light text cleanup for ElevenLabs — remove emojis, special characters,
+  /// and formatting that confuses pronunciation.
   /// ElevenLabs multilingual_v2 handles Hindi/Hinglish natively, so heavy
   /// normalization (SpeechNaturalizer, CaregiverFilter) would hurt pronunciation.
   String _lightCleanForElevenLabs(String text) {
@@ -428,6 +429,17 @@ class VoiceEngine {
       ),
       '',
     );
+    // Remove markdown formatting (* _ # `) that confuses TTS
+    clean = clean.replaceAll(RegExp(r'[*_#`~]'), '');
+    // Remove hashtags
+    clean = clean.replaceAll(RegExp(r'#\w+'), '');
+    // Remove parenthetical asides like (laughs), (sigh) etc.
+    clean = clean.replaceAll(RegExp(r'\([^)]*\)'), '');
+    // Remove quotation marks that cause pauses
+    clean = clean.replaceAll(RegExp(r'["""\u201C\u201D]'), '');
+    // Replace ellipsis with period for cleaner pacing
+    clean = clean.replaceAll('...', '. ');
+    clean = clean.replaceAll('…', '. ');
     // Collapse multiple spaces
     clean = clean.replaceAll(RegExp(r'\s+'), ' ').trim();
     return clean;

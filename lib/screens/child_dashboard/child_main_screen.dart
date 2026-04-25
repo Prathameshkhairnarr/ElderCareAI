@@ -52,6 +52,7 @@ class _ChildMainScreenState extends State<ChildMainScreen> {
 
   Future<void> _initServices() async {
     await ChildControlsService().init();
+    if (mounted) setState(() {}); // Rebuild UI with synced screen time
     _startUsageTimer();
   }
 
@@ -82,10 +83,10 @@ class _ChildMainScreenState extends State<ChildMainScreen> {
   Widget build(BuildContext context) {
     final List<Widget> tabs = [
       HomeTab(onTabChange: _onTabTapped),
-      const SafetyTab(),
+      SafetyTab(),
       const SizedBox(), // Placeholder for Voice Buddy
-      const FocusTab(),
-      const InsightsTab(),
+      FocusTab(),
+      InsightsTab(),
     ];
 
     return AnnotatedRegion<SystemUiOverlayStyle>(

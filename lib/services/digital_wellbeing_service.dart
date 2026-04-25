@@ -22,6 +22,17 @@ class DigitalWellbeingService {
   factory DigitalWellbeingService() => _instance;
   DigitalWellbeingService._internal();
 
+  /// Fetches raw app usage from the OS without any UI enrichment
+  Future<List<AppUsageInfo>> getRawUsage() async {
+    try {
+      final now = DateTime.now();
+      final startDate = DateTime(now.year, now.month, now.day);
+      return await AppUsage().getAppUsage(startDate, now);
+    } catch (e) {
+      return [];
+    }
+  }
+
   /// Fetches today's app usage stats enriched with app names and icons.
   Future<List<EnrichedAppUsage>> getTodayUsage() async {
     try {
@@ -32,8 +43,8 @@ class DigitalWellbeingService {
       // Fetch raw usage from OS
       List<AppUsageInfo> rawUsages = await AppUsage().getAppUsage(startDate, now);
 
-      // We only care about apps used for more than 1 minute to avoid clutter.
-      final filtered = rawUsages.where((u) => u.usage.inMinutes > 0).toList();
+      // We care about apps used for more than 0 seconds to accurately sum total time.
+      final filtered = rawUsages.where((u) => u.usage.inSeconds > 0).toList();
 
       List<EnrichedAppUsage> enrichedList = [];
       for (var usage in filtered) {

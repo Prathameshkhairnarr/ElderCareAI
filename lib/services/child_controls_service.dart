@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_logger.dart';
+import 'digital_wellbeing_service.dart';
 
 class ChildLocationPoint {
   final double latitude;
@@ -114,6 +115,29 @@ class ChildControlsService {
       await prefs.setString(_dateKey, today);
     } else {
       _usedSecondsToday = prefs.getInt(_usedSecondsKey) ?? 0;
+    }
+
+    // Try to sync with native Digital Wellbeing for accurate screen time
+    // We calculate from raw usages to ensure no data is lost during early initialization
+    try {
+      final now = DateTime.now();
+      final startDate = DateTime(now.year, now.month, now.day);
+      
+      // Import app_usage inline or use the full path if imported. We'll use the service to get raw.
+      // Wait, we need to import app_usage. Let's just fetch it directly.
+      final rawUsages = await DigitalWellbeingService().getRawUsage();
+      int totalNativeSeconds = 0;
+      for (var u in rawUsages) {
+        totalNativeSeconds += u.usage.inSeconds;
+      }
+      
+      if (totalNativeSeconds > 0) {
+         _usedSecondsToday = totalNativeSeconds;
+         await prefs.setInt(_usedSecondsKey, _usedSecondsToday);
+         AppLogger.info(LogCategory.lifecycle, 'Synced $_usedSecondsToday seconds from Native Digital Wellbeing');
+      }
+    } catch (e) {
+      AppLogger.info(LogCategory.lifecycle, 'Native Digital Wellbeing sync failed or no permission: $e');
     }
 
     _dailyLimitMinutes = prefs.getInt(_dailyLimitKey) ?? 120;

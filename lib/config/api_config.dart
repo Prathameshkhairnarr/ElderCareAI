@@ -96,7 +96,7 @@ class ApiConfig {
   /// ElevenLabs TTS endpoint.
   static String elevenLabsEndpoint(bool isMale) {
     final voiceId = isMale ? elevenLabsMaleVoiceId : elevenLabsFemaleVoiceId;
-    return 'https://api.elevenlabs.io/v1/text-to-speech/$voiceId';
+    return 'https://api.elevenlabs.io/v1/text-to-speech/$voiceId?optimize_streaming_latency=3';
   }
 
   // ── APILayer Number Verification API ──

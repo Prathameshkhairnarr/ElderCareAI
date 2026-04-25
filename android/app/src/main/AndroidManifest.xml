@@ -103,6 +103,10 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="tel" />
         </intent>
+        <!-- Required for speech recognition on Android 11+ -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
     </queries>
     <!-- Explicitly remove unused Bluetooth permissions -->
     <uses-permission android:name="android.permission.BLUETOOTH" tools:node="remove" />

@@ -11,7 +11,7 @@ class SettingsService extends ChangeNotifier {
   bool _voiceFeedback = true;
   bool _notifications = true;
   double _fontScale = 1.0;
-  bool _shakeSosEnabled = true;
+  bool _shakeSosEnabled = false;
 
   // Voice alert category toggles
   bool _voiceAlertScam = true;
@@ -58,7 +58,7 @@ class SettingsService extends ChangeNotifier {
     _voiceFeedback = prefs.getBool(_voiceKey) ?? true;
     _notifications = prefs.getBool(_notifKey) ?? true;
     _fontScale = prefs.getDouble(_fontKey) ?? 1.0;
-    _shakeSosEnabled = prefs.getBool(_shakeKey) ?? true;
+    _shakeSosEnabled = prefs.getBool(_shakeKey) ?? false;
 
     // Load voice alert category toggles
     _voiceAlertScam = prefs.getBool(_vaScamKey) ?? true;

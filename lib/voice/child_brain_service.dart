@@ -89,7 +89,7 @@ class ChildBrainService {
       if (ApiConfig.isAzureOpenAiEnabled) {
         final aiText = await _callAzureOpenAi(userInput, language).timeout(_apiTimeout);
         if (aiText != null && aiText.isNotEmpty) {
-          final safe = _limitSentences(aiText, 8);
+          final safe = _limitSentences(aiText, 4);
           final emotion = EmotionTagger.tag(safe);
           _memory.addTurn(userInput, safe);
 
@@ -102,7 +102,7 @@ class ChildBrainService {
       if (_isGeminiEnabled) {
         final aiText = await _callGemini(userInput, normalized, language).timeout(_apiTimeout);
         if (aiText != null && aiText.isNotEmpty) {
-          final safe = _limitSentences(aiText, 8);
+          final safe = _limitSentences(aiText, 4);
           final emotion = EmotionTagger.tag(safe);
           _memory.addTurn(userInput, safe);
 
@@ -137,7 +137,7 @@ class ChildBrainService {
         {'role': 'user', 'content': userMessage.toString()},
       ],
       'temperature': 0.8,
-      'max_tokens': 300,
+      'max_tokens': 150,
       if (isGitHubToken) 'model': 'gpt-4o',
     });
 
@@ -170,7 +170,7 @@ class ChildBrainService {
     final requestBody = jsonEncode({
       'systemInstruction': { 'parts': [{'text': _systemPrompt}] },
       'contents': [{'role': 'user', 'parts': [{'text': userMessage.toString()}]}],
-      'generationConfig': {'temperature': 0.8, 'maxOutputTokens': 300},
+      'generationConfig': {'temperature': 0.8, 'maxOutputTokens': 150},
     });
 
     final response = await http.post(
