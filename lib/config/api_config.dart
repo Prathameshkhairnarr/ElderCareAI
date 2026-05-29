@@ -40,29 +40,43 @@ class ApiConfig {
         '$azureOpenAiDeployment/chat/completions?api-version=$azureOpenAiApiVersion';
   }
 
-  // ── Azure Speech Service Configuration ──
+  // ── Edge TTS Configuration (Free Microsoft Neural Voices) ──
+  // Same voices as Azure Speech Service but FREE — no subscription key needed.
+
+  // Primary voice: warm, natural Hindi female neural voice.
+  static const String edgeTtsDefaultVoice = 'hi-IN-SwaraNeural';
+
+  // Fallback voices if primary is unavailable.
+  static const List<String> edgeTtsFallbackVoices = [
+    'hi-IN-PallaviNeural',
+    'hi-IN-MadhurNeural',
+  ];
+
+  /// Edge TTS backend endpoint.
+  static String get edgeTtsEndpoint => '$baseUrl/tts/synthesize';
+
+  /// Edge TTS is always enabled (no API key needed).
+  static bool get isEdgeTtsEnabled => true;
+
+  // ── Legacy Azure Speech Service Configuration (DEPRECATED — replaced by Edge TTS) ──
   static final String azureSubscriptionKey =
       dotenv.env['AZURE_SPEECH_KEY'] ?? '';
 
   static final String azureRegion =
       dotenv.env['AZURE_REGION'] ?? 'centralindia';
 
-  // Primary voice: warm, natural Hindi female neural voice.
   static const String azureVoiceName = 'hi-IN-SwaraNeural';
 
-  // Fallback voices if primary is unavailable.
   static const List<String> azureFallbackVoices = [
     'hi-IN-PallaviNeural',
     'hi-IN-MadhurNeural',
   ];
 
-  // Output format: MP3 16kHz mono — good balance of quality and size.
   static const String azureOutputFormat = 'audio-16khz-32kbitrate-mono-mp3';
 
-  /// Whether Azure TTS is configured with a real subscription key.
-  static bool get isAzureEnabled => azureSubscriptionKey.isNotEmpty;
+  /// Azure TTS is now DISABLED — use Edge TTS instead.
+  static bool get isAzureEnabled => false;
 
-  /// Azure Speech Service TTS endpoint.
   static String get azureEndpoint =>
       'https://$azureRegion.tts.speech.microsoft.com/cognitiveservices/v1';
 

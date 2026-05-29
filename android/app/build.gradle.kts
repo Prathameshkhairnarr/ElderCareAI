@@ -18,7 +18,6 @@ plugins {
 android {
     namespace = "com.example.eldercare_ai"
     compileSdk = 36
-    ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

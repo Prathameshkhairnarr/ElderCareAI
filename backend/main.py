@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from database.engine import engine, Base, SessionLocal
 from database.models import Medicine
 from routers import auth, risk, sms, voice, alerts, sos, call_protection, contacts, health, guardian, medication
+from routers.edge_tts_router import router as edge_tts_router
 from services.risk_service import decay_all_scores
 
 # ── Structured Logging Setup ──
@@ -180,6 +181,7 @@ app.include_router(sos.router, prefix="", tags=["SOS"])  # /sos at root
 app.include_router(call_protection.router, prefix="/call", tags=["Call Protection"])
 app.include_router(guardian.router, prefix="", tags=["Guardian"])
 app.include_router(medication.router, prefix="", tags=["Medications"])
+app.include_router(edge_tts_router)
 
 
 @app.get("/", tags=["Health"])
