@@ -4,7 +4,6 @@ import 'dart:ui';
 import '../../../services/auth_service.dart';
 import '../../../services/emergency_service.dart';
 import '../../../services/child_controls_service.dart';
-import 'package:geolocator/geolocator.dart';
 import '../child_profile_screen.dart';
 import '../child_main_screen.dart';
 

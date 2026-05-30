@@ -42,6 +42,7 @@ class ApiConfig {
 
   // ── Edge TTS Configuration (Free Microsoft Neural Voices) ──
   // Same voices as Azure Speech Service but FREE — no subscription key needed.
+  // Connects directly to Microsoft's Edge read-aloud WebSocket service.
 
   // Primary voice: warm, natural Hindi female neural voice.
   static const String edgeTtsDefaultVoice = 'hi-IN-SwaraNeural';
@@ -52,10 +53,7 @@ class ApiConfig {
     'hi-IN-MadhurNeural',
   ];
 
-  /// Edge TTS backend endpoint.
-  static String get edgeTtsEndpoint => '$baseUrl/tts/synthesize';
-
-  /// Edge TTS is always enabled (no API key needed).
+  /// Edge TTS is always enabled (no API key needed, direct WebSocket).
   static bool get isEdgeTtsEnabled => true;
 
   // ── Legacy Azure Speech Service Configuration (DEPRECATED — replaced by Edge TTS) ──

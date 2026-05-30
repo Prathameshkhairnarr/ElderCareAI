@@ -7,7 +7,6 @@ import 'tabs/home_tab.dart';
 import 'tabs/safety_tab.dart';
 import 'tabs/focus_tab.dart';
 import 'tabs/insights_tab.dart';
-import 'tabs/timeline_tab.dart';
 import 'dart:async';
 
 // ── Dark Monitoring Theme Constants ──

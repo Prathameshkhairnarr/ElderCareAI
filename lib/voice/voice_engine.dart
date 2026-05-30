@@ -12,9 +12,6 @@ import 'edge_tts_service.dart';
 import 'elevenlabs_service.dart';
 import 'google_tts_service.dart';
 import 'tts_service.dart';
-// ── DISABLED with flutter_tts — uncomment to re-enable ──
-// import 'speech_naturalizer.dart';
-// import 'caregiver_filter.dart';
 import 'emotion_tagger.dart' show EmotionTag;
 import 'language_detector.dart';
 
@@ -77,8 +74,8 @@ class VoiceEngine {
   Future<void> initialize() async {
     if (_initialized) return;
 
-    // ── DISABLED: flutter_tts fallback — uncomment to re-enable ──
-    // await _tts.initialize();
+    // ── Initialize flutter_tts as final fallback ──
+    await _tts.initialize();
 
     // Get temp directory for neural TTS audio files
     try {
@@ -155,24 +152,16 @@ class VoiceEngine {
           return;
         }
       }
-      // ── 2nd Priority: Edge TTS (free, same voices as Azure) ──
+      // ── 2nd Priority: Edge TTS ──
       if (_edgeTts.isConfigured) {
         final success = await _tryEdgeTts(text, locale);
-        if (success) {
-          _isSpeaking = false;
-          return;
-        }
-      }
-      // ── 3rd Priority: Google ──
-      if (_googleTts.isConfigured) {
-        final success = await _tryGoogleTts(text, locale);
         if (success) {
           _isSpeaking = false;
           return;
         }
       }
     } else {
-      // ── 1st Priority for AI Doctor: Edge TTS (free, same voices as Azure) ──
+      // ── 1st Priority for AI Doctor: Edge TTS (hi-IN-SwaraNeural) ──
       if (_edgeTts.isConfigured) {
         final success = await _tryEdgeTts(text, locale);
         if (success) {
@@ -180,15 +169,7 @@ class VoiceEngine {
           return;
         }
       }
-      // ── 2nd Priority: Google ──
-      if (_googleTts.isConfigured) {
-        final success = await _tryGoogleTts(text, locale);
-        if (success) {
-          _isSpeaking = false;
-          return;
-        }
-      }
-      // ── 3rd Priority: ElevenLabs ──
+      // ── 2nd Priority: ElevenLabs ──
       if (_elevenLabs.isConfigured) {
         final elevenLabsText = _lightCleanForElevenLabs(text);
         final success = await _tryElevenLabs(elevenLabsText);
@@ -199,10 +180,10 @@ class VoiceEngine {
       }
     }
 
-    // ── DISABLED: flutter_tts fallback — Edge TTS + ElevenLabs only ──
+    // ── No more fallbacks — stay silent rather than use robotic flutter_tts ──
     AppLogger.warn(
       LogCategory.lifecycle,
-      '[VOICE] All TTS engines failed — no TTS available (flutter_tts DISABLED)',
+      '[VOICE] Edge TTS + ElevenLabs both failed — no TTS available',
     );
     _isSpeaking = false;
   }
@@ -251,24 +232,16 @@ class VoiceEngine {
           return;
         }
       }
-      // ── 2nd Priority: Edge TTS (free, same voices as Azure) ──
+      // ── 2nd Priority: Edge TTS ──
       if (_edgeTts.isConfigured) {
         final success = await _tryEdgeTts(text, locale);
-        if (success) {
-          _isSpeaking = false;
-          return;
-        }
-      }
-      // ── 3rd Priority: Google ──
-      if (_googleTts.isConfigured) {
-        final success = await _tryGoogleTts(text, locale);
         if (success) {
           _isSpeaking = false;
           return;
         }
       }
     } else {
-      // ── 1st Priority for AI Doctor: Edge TTS (free, same voices as Azure) ──
+      // ── 1st Priority for AI Doctor: Edge TTS (hi-IN-SwaraNeural) ──
       if (_edgeTts.isConfigured) {
         final success = await _tryEdgeTts(text, locale);
         if (success) {
@@ -276,15 +249,7 @@ class VoiceEngine {
           return;
         }
       }
-      // ── 2nd Priority: Google ──
-      if (_googleTts.isConfigured) {
-        final success = await _tryGoogleTts(text, locale);
-        if (success) {
-          _isSpeaking = false;
-          return;
-        }
-      }
-      // ── 3rd Priority: ElevenLabs ──
+      // ── 2nd Priority: ElevenLabs ──
       if (_elevenLabs.isConfigured) {
         final elevenLabsText = _lightCleanForElevenLabs(text);
         final success = await _tryElevenLabs(elevenLabsText);
@@ -295,10 +260,10 @@ class VoiceEngine {
       }
     }
 
-    // ── DISABLED: flutter_tts fallback — Edge TTS + ElevenLabs only ──
+    // ── No more fallbacks — stay silent rather than use robotic flutter_tts ──
     AppLogger.warn(
       LogCategory.lifecycle,
-      '[VOICE] All TTS engines failed — no TTS available (flutter_tts DISABLED)',
+      '[VOICE] Edge TTS + ElevenLabs both failed — no TTS available',
     );
     _isSpeaking = false;
   }
@@ -639,27 +604,26 @@ class VoiceEngine {
   //  STOP & CLEANUP
   // ══════════════════════════════════════════════════════
 
-  /// Stop ALL audio — Azure/ElevenLabs (just_audio) and flutter_tts.
+  /// Stop ALL audio — Edge TTS/ElevenLabs (just_audio) and flutter_tts.
   Future<void> stop() async {
     _isSpeaking = false;
 
-    // Stop just_audio player (used by Azure + ElevenLabs)
+    // Stop just_audio player (used by Edge TTS + ElevenLabs)
     try {
       await _audioPlayer.stop();
     } catch (_) {}
 
-    // ── DISABLED: flutter_tts stop — uncomment to re-enable ──
-    // try {
-    //   await _tts.stop();
-    // } catch (_) {}
+    // Stop flutter_tts
+    try {
+      await _tts.stop();
+    } catch (_) {}
   }
 
   /// Clean up all resources.
   Future<void> dispose() async {
     await stop();
     await _audioPlayer.dispose();
-    // ── DISABLED: flutter_tts dispose — uncomment to re-enable ──
-    // _tts.dispose();
+    _tts.dispose();
     _azureTts.clearCache();
     _edgeTts.clearCache();
     _googleTts.clearCache();

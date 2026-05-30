@@ -33,6 +33,7 @@ dependencies:
   path_provider: ^2.1.0
   flutter_dotenv: ^5.1.0
   connectivity_plus: ^7.0.0
+  crypto: ^3.0.3
   heart_bpm: ^2.0.0+0
   webview_flutter: ^4.13.1
   geocoding: ^4.0.0

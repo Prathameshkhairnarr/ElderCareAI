@@ -1,3 +1,6 @@
 {
-    "kiroAgent.configureMCP": "Disabled"
+    "kiroAgent.configureMCP": "Disabled",
+    "terminal.integrated.env.windows": {
+        "Path": "${env:Path};D:\\flutter\\bin"
+    }
 }

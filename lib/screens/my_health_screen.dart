@@ -762,7 +762,7 @@ class _MyHealthScreenState extends State<MyHealthScreen> {
 
           // Gender
           DropdownButtonFormField<String>(
-            initialValue: _selectedGender,
+            value: _selectedGender,
             dropdownColor: Theme.of(
               context,
             ).colorScheme.surfaceContainerHighest,
@@ -785,7 +785,7 @@ class _MyHealthScreenState extends State<MyHealthScreen> {
 
           // Blood Group
           DropdownButtonFormField<String>(
-            initialValue: _selectedBloodGroup,
+            value: _selectedBloodGroup,
             dropdownColor: Theme.of(
               context,
             ).colorScheme.surfaceContainerHighest,
