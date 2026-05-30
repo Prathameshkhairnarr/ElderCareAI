@@ -11,3 +11,6 @@ firebase-admin
 scikit-learn
 psycopg2-binary
 edge-tts>=7.0.0
+httpx
+joblib
+pandas

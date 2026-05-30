@@ -46,7 +46,10 @@ class VoiceController extends ChangeNotifier {
   static const _stopKeywords = [
     'stop', 'ruk', 'ruko', 'ruk jao', 'bas', 'chup',
     'band karo', 'band kar', 'shut up', 'quiet', 'enough',
-    'bas karo', 'theek hai', 'ok stop',
+    'bas karo', 'theek hai', 'ok stop', 'rehne do', 'rehne de',
+    'mat bolo', 'chup karo', 'band karo na', 'haan theek hai',
+    'ok ok', 'okay', 'thik hai', 'accha theek hai', 'nahi',
+    'nahi chahiye', 'mat batao', 'jaane do',
   ];
 
   // ── Wake word phrases to strip from input ──
@@ -144,7 +147,7 @@ class VoiceController extends ChangeNotifier {
   //  PRIMARY ACTION — Tap to listen/stop
   // ══════════════════════════════════════════════
 
-  /// Called when user taps the mic button (short tap = single query).
+  /// Called when user taps the mic button — starts continuous conversation.
   Future<void> onMicTap() async {
     if (_busy) return; // prevent rapid tap race conditions
     _busy = true;
@@ -154,6 +157,7 @@ class VoiceController extends ChangeNotifier {
         case VoiceState.idle:
         case VoiceState.error:
           _pauseWakeWord();
+          _isConversationActive = true; // Always enable auto-relisten
           await _startListening();
           break;
         case VoiceState.listening:
@@ -535,7 +539,10 @@ class VoiceController extends ChangeNotifier {
 
   bool _isStopCommand(String text) {
     for (final keyword in _stopKeywords) {
-      if (text == keyword || text.startsWith('$keyword ') || text.endsWith(' $keyword')) {
+      if (text == keyword || 
+          text.contains(keyword) ||
+          text.startsWith('$keyword ') || 
+          text.endsWith(' $keyword')) {
         return true;
       }
     }

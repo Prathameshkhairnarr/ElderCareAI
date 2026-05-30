@@ -119,9 +119,7 @@ class VoiceEngine {
   /// Flow:
   ///   1. Stop previous audio
   ///   2. Debounce check
-  ///   3. Try Edge TTS (free, same voices as Azure) — primary
-  ///   4. Try ElevenLabs (if configured) — neural multilingual
-  ///   5. Try Google TTS (if configured)
+  ///   3. Edge TTS (hi-IN-SwaraNeural) — only engine
   Future<void> speak(String text, String locale) async {
     if (text.trim().isEmpty) return;
 
@@ -142,130 +140,29 @@ class VoiceEngine {
     _totalCalls++;
     _isSpeaking = true;
 
-    if (isMaleVoice) {
-      // ── 1st Priority for AI Buddy: ElevenLabs ──
-      if (_elevenLabs.isConfigured) {
-        final elevenLabsText = _lightCleanForElevenLabs(text);
-        final success = await _tryElevenLabs(elevenLabsText);
-        if (success) {
-          _isSpeaking = false;
-          return;
-        }
-      }
-      // ── 2nd Priority: Edge TTS ──
-      if (_edgeTts.isConfigured) {
-        final success = await _tryEdgeTts(text, locale);
-        if (success) {
-          _isSpeaking = false;
-          return;
-        }
-      }
-    } else {
-      // ── 1st Priority for AI Doctor: Edge TTS (hi-IN-SwaraNeural) ──
-      if (_edgeTts.isConfigured) {
-        final success = await _tryEdgeTts(text, locale);
-        if (success) {
-          _isSpeaking = false;
-          return;
-        }
-      }
-      // ── 2nd Priority: ElevenLabs ──
-      if (_elevenLabs.isConfigured) {
-        final elevenLabsText = _lightCleanForElevenLabs(text);
-        final success = await _tryElevenLabs(elevenLabsText);
-        if (success) {
-          _isSpeaking = false;
-          return;
-        }
-      }
+    // ── Only Edge TTS — SwaraNeural voice ──
+    final success = await _tryEdgeTts(text, locale);
+    if (success) {
+      _isSpeaking = false;
+      return;
     }
 
-    // ── No more fallbacks — stay silent rather than use robotic flutter_tts ──
     AppLogger.warn(
       LogCategory.lifecycle,
-      '[VOICE] Edge TTS + ElevenLabs both failed — no TTS available',
+      '[VOICE] Edge TTS failed — no TTS available',
     );
     _isSpeaking = false;
   }
 
   /// Speak with emotion-aware voice modulation.
-  ///
-  /// Azure and ElevenLabs handle emotion naturally via neural models.
-  /// flutter_tts fallback uses pitch/rate adjustments via [TtsService.speakWithEmotion].
+  /// Edge TTS handles emotion naturally via neural model.
   Future<void> speakWithEmotion(
     String text,
     String locale,
     dynamic emotion,
   ) async {
-    if (text.trim().isEmpty) return;
-
-    // Safely cast emotion to EmotionTag
-    // ignore: unused_local_variable — kept for flutter_tts re-enable
-    final EmotionTag safeEmotion = (emotion is EmotionTag)
-        ? emotion
-        : EmotionTag.neutral;
-
-    // ── Debounce guard ──
-    final now = DateTime.now();
-    if (now.difference(_lastSpeakTime).inMilliseconds < _debounceMs) {
-      AppLogger.info(
-        LogCategory.lifecycle,
-        '[VOICE] VoiceEngine debounced — too rapid',
-      );
-      return;
-    }
-    _lastSpeakTime = now;
-
-    // ── Stop previous audio ──
-    await stop();
-
-    _totalCalls++;
-    _isSpeaking = true;
-
-    if (isMaleVoice) {
-      // ── 1st Priority for AI Buddy: ElevenLabs ──
-      if (_elevenLabs.isConfigured) {
-        final elevenLabsText = _lightCleanForElevenLabs(text);
-        final success = await _tryElevenLabs(elevenLabsText);
-        if (success) {
-          _isSpeaking = false;
-          return;
-        }
-      }
-      // ── 2nd Priority: Edge TTS ──
-      if (_edgeTts.isConfigured) {
-        final success = await _tryEdgeTts(text, locale);
-        if (success) {
-          _isSpeaking = false;
-          return;
-        }
-      }
-    } else {
-      // ── 1st Priority for AI Doctor: Edge TTS (hi-IN-SwaraNeural) ──
-      if (_edgeTts.isConfigured) {
-        final success = await _tryEdgeTts(text, locale);
-        if (success) {
-          _isSpeaking = false;
-          return;
-        }
-      }
-      // ── 2nd Priority: ElevenLabs ──
-      if (_elevenLabs.isConfigured) {
-        final elevenLabsText = _lightCleanForElevenLabs(text);
-        final success = await _tryElevenLabs(elevenLabsText);
-        if (success) {
-          _isSpeaking = false;
-          return;
-        }
-      }
-    }
-
-    // ── No more fallbacks — stay silent rather than use robotic flutter_tts ──
-    AppLogger.warn(
-      LogCategory.lifecycle,
-      '[VOICE] Edge TTS + ElevenLabs both failed — no TTS available',
-    );
-    _isSpeaking = false;
+    // Edge TTS neural voice handles emotion naturally — just call speak()
+    await speak(text, locale);
   }
 
   // ══════════════════════════════════════════════════════
@@ -282,13 +179,13 @@ class VoiceEngine {
   Future<bool> _tryEdgeTts(String text, String locale) async {
     final stopwatch = Stopwatch()..start();
 
-    // Map locale to voice name (same voices as Azure)
+    // Always use SwaraNeural — the only voice we want
     final detectedLang = locale.startsWith('hi')
         ? DetectedLanguage.hindi
         : DetectedLanguage.english;
-    final voiceName = isMaleVoice
-        ? (detectedLang == DetectedLanguage.hindi ? 'hi-IN-MadhurNeural' : 'en-IN-PrabhatNeural')
-        : LanguageDetector.azureVoiceName(detectedLang);
+    final voiceName = detectedLang == DetectedLanguage.hindi
+        ? 'hi-IN-SwaraNeural'
+        : 'en-IN-NeerjaNeural';
 
     try {
       AppLogger.info(

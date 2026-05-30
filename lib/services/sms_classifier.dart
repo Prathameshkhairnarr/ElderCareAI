@@ -1606,6 +1606,108 @@ class SmsClassifier {
   }
 
   // ─────────────────────────────────────────────────────────────────
+  //  INDIAN DLT SENDER WHITELIST (TRAI Regulated)
+  // ─────────────────────────────────────────────────────────────────
+
+  /// Check if sender matches known DLT trusted sender patterns.
+  /// DLT senders are TRAI-regulated and NEVER send scam messages.
+  static bool _isDltTrustedSender(String senderUpper) {
+    // Check exact match or suffix match (e.g., "JM-AIRTEL" or just "AIRTEL")
+    for (final trusted in _dltTrustedSenders) {
+      if (senderUpper == trusted ||
+          senderUpper.endsWith('-$trusted') ||
+          senderUpper.contains(trusted)) {
+        return true;
+      }
+    }
+    // Check DLT format: XX-XXXXXX (2 letter prefix + hyphen + 5-6 alphanumeric)
+    if (RegExp(r'^[A-Z]{2}-[A-Z0-9]{5,6}$').hasMatch(senderUpper)) {
+      // It's DLT format — check against known prefixes
+      final suffix = senderUpper.split('-').last;
+      for (final trusted in _dltTrustedSenders) {
+        if (suffix == trusted || suffix.startsWith(trusted.substring(0, trusted.length > 3 ? 3 : trusted.length))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// TRAI DLT Registered Sender IDs (India)
+  static const _dltTrustedSenders = <String>{
+    // Telecom
+    'AIRTEL', 'JIO', 'BSNL', 'VODAFONE', 'VI', 'IDEA', 'TATADOCOMO', 'TATA', 'MTS',
+    // Banks (Public)
+    'SBIINB', 'SBIPSG', 'SBMSMS', 'PNBSMS', 'BOBIMT', 'BOISMS', 'CANBNK',
+    'UNIONB', 'CENTBK', 'INDBNK', 'ALBANK', 'SYNBNK', 'UCOBNK', 'OBCSMS',
+    'IOBSMS', 'ANDBSM', 'VIJBNK', 'DENABN', 'CORPBK', 'MAHABK',
+    // Banks (Private)
+    'HDFCBK', 'HDFCBN', 'ICICIB', 'AXISBK', 'AXISBN', 'KOTAKB', 'YESBNK',
+    'INDUSB', 'FEDBK', 'KVBSMS', 'DCBBNK', 'RBLBNK', 'IDBIBK', 'BANDHN',
+    'AUBANK', 'SURYOD', 'CSBBNK',
+    // Payment & Fintech
+    'PAYTMB', 'PAYTMS', 'PAYTM', 'PHONEPE', 'FREECHARGE', 'MOBIKWIK',
+    'AMAZON', 'FLIPKRT', 'GPAY', 'CRED', 'SLICE', 'BHARPE', 'LAZYPAY',
+    'SIMPL', 'JUPITER', 'FAMPAY', 'NIYO',
+    // Insurance
+    'LICIND', 'LICOFS', 'HDFCLI', 'ICICIP', 'SBILIC', 'BAJALI',
+    'STARHI', 'NIACIN', 'UNITEDI', 'RELIGI', 'MAXLIF', 'KOTAKL',
+    // Government & Utilities
+    'UIDAI', 'IRCTC', 'EPFOHO', 'NSDL', 'CDSL', 'SEBI', 'RBI',
+    'INCOMETX', 'GSTNOF', 'COWIN', 'NHMSMS', 'AYUSHM',
+    'BESCOM', 'MSEDCL', 'TPDDL', 'CESC', 'WBSEDCL',
+    'MAHAGS', 'IOCL', 'HPCL', 'BPCL', 'ATPGAS',
+    // E-commerce & Delivery
+    'MYNTRA', 'MEESHO', 'SNAPDL', 'BLUDRТ', 'DELHVR', 'EKART',
+    'XPRESB', 'SHADOWF', 'ZOMATO', 'SWIGGY', 'BLINKT', 'ZEPTO', 'DUNZO', 'BIGBSK',
+    // OTT & Services
+    'NETFLIX', 'PRIMEVD', 'HOTSTAR', 'JIOTVS', 'AIRTVS',
+    'TATASKY', 'DISHNW', 'SONYLT',
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+  //  CONTEXT-BASED SAFE PATTERN HELPERS
+  // ─────────────────────────────────────────────────────────────────
+
+  /// Check if message is a bank transaction alert.
+  static bool _isTransactionAlert(String textLower, String? sender) {
+    final hasAmount = RegExp(r'(rs\.?|inr|₹)\s*[\d,]+').hasMatch(textLower);
+    final hasTransactionWord = textLower.contains('debited') ||
+        textLower.contains('credited') ||
+        textLower.contains('transferred') ||
+        textLower.contains('received') ||
+        textLower.contains('payment of') ||
+        textLower.contains('transaction');
+    final hasAccountRef = textLower.contains('a/c') ||
+        textLower.contains('account') ||
+        textLower.contains('xx') ||
+        RegExp(r'\*{2,}\d{4}').hasMatch(textLower);
+
+    return hasAmount && hasTransactionWord && hasAccountRef;
+  }
+
+  /// Check if message is a delivery update.
+  static bool _isDeliveryUpdate(String textLower) {
+    final deliveryPatterns = [
+      'out for delivery', 'delivered', 'shipment', 'order #',
+      'awb', 'tracking', 'dispatched', 'shipped', 'in transit',
+      'delivery scheduled', 'package arrived', 'order placed',
+      'order confirmed', 'arriving today', 'arriving tomorrow',
+    ];
+    return deliveryPatterns.any((p) => textLower.contains(p));
+  }
+
+  /// Check if message is a recharge confirmation.
+  static bool _isRechargeConfirmation(String textLower) {
+    final rechargePatterns = [
+      'recharge successful', 'recharge of rs', 'validity',
+      'gb data', 'plan activated', 'pack activated',
+      'talktime', 'balance is rs', 'data balance',
+    ];
+    return rechargePatterns.any((p) => textLower.contains(p));
+  }
+
+  // ─────────────────────────────────────────────────────────────────
   //  KEYWORD MATCHING HELPER
   // ─────────────────────────────────────────────────────────────────
 
@@ -1645,7 +1747,6 @@ class SmsClassifier {
     if (message == null || message.trim().isEmpty) return _safeDefault;
 
     // --- TRUECALLER-STYLE CONTACT BYPASS ---
-    // If the sender is saved in contacts, it's 99.9% safe. Skip expensive analysis.
     if (isContact) {
       return const SmsClassification(
         isScam: false,
@@ -1654,6 +1755,21 @@ class SmsClassifier {
         explanation: 'Message is from a verified saved contact. Bypassed filters.',
         label: 'SAFE',
       );
+    }
+
+    // --- DLT SENDER WHITELIST (TRAI Regulated) ---
+    // If sender matches known DLT ID, it's a verified business. ALWAYS SAFE.
+    if (sender != null && sender.isNotEmpty) {
+      final senderUpper = sender.toUpperCase().trim();
+      if (_isDltTrustedSender(senderUpper)) {
+        return SmsClassification(
+          isScam: false,
+          riskScore: 0,
+          scamType: 'DLT_TRUSTED',
+          explanation: '[SAFE] Verified DLT sender: $sender. TRAI-regulated business.',
+          label: 'SAFE',
+        );
+      }
     }
 
     try {
@@ -1668,7 +1784,9 @@ class SmsClassifier {
       final urls = _extractUrls(safeMessage);
       final hasLinks = urls.isNotEmpty;
       
-      // 1. STEP 1: HARD SAFE OVERRIDE
+      // --- CONTEXT-BASED SAFE PATTERNS ---
+      
+      // 1. OTP Messages (from any sender)
       final hasOtpCode = _otpPattern.hasMatch(textLower);
       final hasOtpWords = _otpWords.any((w) => textLower.contains(w));
       
@@ -1678,6 +1796,39 @@ class SmsClassifier {
           riskScore: 0,
           scamType: 'OTP / Authentication',
           explanation: '[SAFE] Standard OTP message with no malicious intent.',
+          label: 'SAFE',
+        );
+      }
+
+      // 2. Transaction Alerts (debit/credit from bank-like sender)
+      if (_isTransactionAlert(textLower, sender)) {
+        return const SmsClassification(
+          isScam: false,
+          riskScore: 0,
+          scamType: 'Transaction Alert',
+          explanation: '[SAFE] Bank transaction notification.',
+          label: 'SAFE',
+        );
+      }
+
+      // 3. Delivery Updates (no suspicious links)
+      if (_isDeliveryUpdate(textLower) && !hasLinks) {
+        return const SmsClassification(
+          isScam: false,
+          riskScore: 0,
+          scamType: 'Delivery Update',
+          explanation: '[SAFE] Package/order delivery notification.',
+          label: 'SAFE',
+        );
+      }
+
+      // 4. Recharge Confirmations
+      if (_isRechargeConfirmation(textLower)) {
+        return const SmsClassification(
+          isScam: false,
+          riskScore: 0,
+          scamType: 'Recharge Confirmation',
+          explanation: '[SAFE] Mobile recharge/plan confirmation.',
           label: 'SAFE',
         );
       }

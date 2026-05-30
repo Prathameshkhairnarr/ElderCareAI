@@ -556,7 +556,63 @@ def _analyze_text(text: str, metadata: dict = None) -> AnalysisResult:
 
 
 def analyze_sms(message: str, metadata: dict = None) -> AnalysisResult:
-    return _analyze_text(message, metadata)
+    """
+    Hybrid SMS analysis: Rule-based first, then AI for suspicious messages.
+    
+    Flow:
+      1. Rule-based analysis (instant)
+      2. If SUSPICIOUS (score 25-60) → enhance with Gemini AI
+      3. AI verdict overrides rule-based if confidence is higher
+    """
+    # Step 1: Fast rule-based analysis
+    rule_result = _analyze_text(message, metadata)
+    
+    # Step 2: If clearly SAFE or clearly SCAM, return immediately
+    if rule_result.confidence < 20 or rule_result.confidence >= 70:
+        return rule_result
+    
+    # Step 3: For SUSPICIOUS range (20-69), use AI for deeper analysis
+    try:
+        from services.ai_sms_analyzer import analyze_with_ai
+        sender = (metadata or {}).get("sender", "")
+        ai_verdict = analyze_with_ai(message, sender)
+        
+        if ai_verdict is not None:
+            # AI successfully analyzed — use its verdict
+            is_scam = ai_verdict.verdict == "SCAM"
+            category = rule_result.category  # Keep rule-based category
+            
+            if ai_verdict.verdict == "SAFE" and ai_verdict.confidence >= 70:
+                # AI says SAFE with high confidence — override
+                return AnalysisResult(
+                    is_scam=False,
+                    confidence=max(0, 100 - ai_verdict.confidence),
+                    category=category,
+                    explanation=f"[AI SAFE] {ai_verdict.reason}",
+                )
+            elif ai_verdict.verdict == "SCAM" and ai_verdict.confidence >= 75:
+                # AI says SCAM with high confidence — override
+                return AnalysisResult(
+                    is_scam=True,
+                    confidence=ai_verdict.confidence,
+                    category=category,
+                    explanation=f"[AI SCAM] {ai_verdict.reason} | Signals: {', '.join(ai_verdict.triggered_signals[:3])}",
+                )
+            else:
+                # AI says SUSPICIOUS or low confidence — blend with rule-based
+                blended_confidence = (rule_result.confidence + ai_verdict.confidence) // 2
+                return AnalysisResult(
+                    is_scam=blended_confidence >= 50,
+                    confidence=blended_confidence,
+                    category=category,
+                    explanation=f"[HYBRID] Rule: {rule_result.confidence}% + AI: {ai_verdict.confidence}% → {ai_verdict.reason}",
+                )
+    except Exception as e:
+        import logging
+        logging.getLogger("eldercare").warning(f"[AI-SMS] Enhancement failed, using rule-based: {e}")
+    
+    # Fallback: return rule-based result
+    return rule_result
 
 
 def analyze_call(transcript: str, metadata: dict = None) -> AnalysisResult:
