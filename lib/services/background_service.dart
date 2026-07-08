@@ -16,6 +16,7 @@ import 'risk_score_provider.dart';
 import 'alert_policy.dart';
 import 'app_logger.dart';
 import 'voice_alert_service.dart';
+import 'task_reminder_service.dart';
 
 // NOTE: initializeBackgroundService() stub removed.
 // The actual background init is initECAIBackground() at the bottom of this file.
@@ -394,6 +395,13 @@ void onStart(ServiceInstance service) async {
         }
       }
     });
+
+    // ── Task Reminder Poller ──
+    try {
+      TaskReminderService().startPolling();
+    } catch (e) {
+      AppLogger.error(LogCategory.lifecycle, 'TaskReminderService init failed: $e');
+    }
 
 
     // ── SMS Listener ──

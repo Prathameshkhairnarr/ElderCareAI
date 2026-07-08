@@ -5,6 +5,7 @@ import '../models/alert_model.dart';
 import '../services/api_service.dart';
 import 'guardian_settings_screen.dart';
 import 'elder_detail_screen.dart';
+import 'guardian_task_assign_screen.dart';
 
 class ChildStatsModel {
   final int id;
@@ -27,6 +28,7 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> with 
   List<ElderStatsModel>? _elders;
   List<AlertModel> _allAlerts = [];
   Map<int, Map<String, dynamic>> _elderVitals = {};
+  Map<String, dynamic>? _taskSummary;
   bool _isLoading = true;
   int _bottomNavIndex = 0;
   Timer? _refreshTimer;
@@ -72,8 +74,12 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> with 
     for (final e in decayed) {
       try { final h = await _api.getHealthSummary(); if (h != null) vitals[e.id] = h; } catch (_) {}
     }
+    
+    // Stub guardian ID 1 for now
+    final taskData = await _api.getGuardianAssignedTasks(1);
+
     if (!mounted) return;
-    setState(() { _elders = decayed; _allAlerts = alerts; _elderVitals = vitals; _isLoading = false; });
+    setState(() { _elders = decayed; _allAlerts = alerts; _elderVitals = vitals; _taskSummary = taskData; _isLoading = false; });
   }
 
   Future<void> _silentRefresh() async {
@@ -83,7 +89,10 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> with 
     final alerts = <AlertModel>[];
     for (final e in decayed) alerts.addAll(e.recentAlerts);
     alerts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    setState(() { _elders = decayed; _allAlerts = alerts; });
+    
+    final taskData = await _api.getGuardianAssignedTasks(1);
+    
+    setState(() { _elders = decayed; _allAlerts = alerts; _taskSummary = taskData; });
   }
 
   Future<List<ElderStatsModel>> _applyDecay(List<ElderStatsModel> elders) async {
@@ -211,9 +220,58 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> with 
       child: ListView(padding: const EdgeInsets.fromLTRB(20, 16, 20, 24), children: [
         _synopsisCard(title: "AI Synopsis", body: _generateAISynopsis(), icon: Icons.auto_awesome, color: _purple),
         const SizedBox(height: 20),
+        if (_taskSummary != null) _buildTaskOverviewCard(),
+        const SizedBox(height: 20),
         Text('Your Elders (${_elders!.length})', style: const TextStyle(color: _textPri, fontSize: 18, fontWeight: FontWeight.w800)),
         const SizedBox(height: 14),
         ..._elders!.map(_buildElderCard),
+      ]),
+    );
+  }
+
+  Widget _buildTaskOverviewCard() {
+    final summary = _taskSummary!['completion_summary'] ?? {'total': 0, 'done': 0, 'pending': 0, 'missed': 0};
+    final tasks = _taskSummary!['tasks'] as List? ?? [];
+    final total = summary['total'] as int;
+    final done = summary['done'] as int;
+    final percent = total > 0 ? (done / total) : 0.0;
+    
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(color: _cardBg, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.05))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('Task Completion', style: TextStyle(color: _textPri, fontWeight: FontWeight.bold, fontSize: 16)),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const GuardianTaskAssignScreen()));
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: _blue, minimumSize: const Size(80, 30), padding: const EdgeInsets.symmetric(horizontal: 12)),
+            child: const Text('Assign New Task', style: TextStyle(fontSize: 12, color: Colors.white)),
+          )
+        ]),
+        const SizedBox(height: 16),
+        Row(children: [
+          SizedBox(
+            width: 60, height: 60,
+            child: Stack(fit: StackFit.expand, children: [
+              CircularProgressIndicator(value: percent, color: _green, backgroundColor: _surface, strokeWidth: 6),
+              Center(child: Text('${(percent * 100).toInt()}%', style: const TextStyle(color: _textPri, fontWeight: FontWeight.bold, fontSize: 14))),
+            ]),
+          ),
+          const SizedBox(width: 16),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: tasks.take(3).map((t) {
+              final status = t['status'] as String;
+              final icon = status == 'done' ? '✅' : (status == 'pending' ? '🟡' : '🔴');
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4.0),
+                child: Text('$icon ${t['title']} — ${status.toUpperCase()}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _textSec, fontSize: 12)),
+              );
+            }).toList(),
+          )),
+        ]),
       ]),
     );
   }

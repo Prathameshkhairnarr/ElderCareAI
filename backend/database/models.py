@@ -39,6 +39,8 @@ class User(Base):
     guardians = sqlalchemy_relationship("Guardian", back_populates="user")
     user_medications = sqlalchemy_relationship("UserMedication", back_populates="user")
     prescriptions = sqlalchemy_relationship("Prescription", back_populates="user")
+    tasks_assigned = sqlalchemy_relationship("Task", foreign_keys="[Task.guardian_id]", back_populates="guardian")
+    tasks_received = sqlalchemy_relationship("Task", foreign_keys="[Task.elder_id]", back_populates="elder")
 
 
 class HealthProfile(Base):
@@ -278,3 +280,31 @@ class PrescriptionItem(Base):
     medicine = sqlalchemy_relationship("Medicine", back_populates="prescription_items")
 
 
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    guardian_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    title = Column(String, nullable=False)
+    task_type = Column(String, default="custom")
+    description = Column(String, nullable=True)
+    icon_key = Column(String, default="task_default")
+
+    scheduled_time = Column(DateTime, nullable=True)
+    recurrence = Column(String, default="once")
+    recurrence_days = Column(String, nullable=True)
+
+    status = Column(String, default="pending")
+    snooze_until = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    priority = Column(String, default="normal")
+    voice_reminder_enabled = Column(Boolean, default=True)
+
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    guardian = sqlalchemy_relationship("User", foreign_keys=[guardian_id], back_populates="tasks_assigned")
+    elder = sqlalchemy_relationship("User", foreign_keys=[elder_id], back_populates="tasks_received")

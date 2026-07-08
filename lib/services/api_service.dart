@@ -11,6 +11,7 @@ import 'auth_service.dart';
 import 'resilient_http.dart';
 import 'app_logger.dart';
 import 'network_manager.dart';
+import '../models/task_model.dart';
 
 class ApiService {
   // ── Singleton ────────────────────────────────────────
@@ -757,6 +758,95 @@ class ApiService {
     } catch (e) {
       AppLogger.error(LogCategory.network, 'deleteUserMedication error: $e');
       return false;
+    }
+  }
+
+  // ── Tasks ────────────────────────────────────────────
+  Future<TaskModel?> createTask(Map<String, dynamic> taskData) async {
+    try {
+      final result = await _http.post(
+        Uri.parse('$_baseUrl/tasks/create'),
+        headers: _headers,
+        body: jsonEncode(taskData),
+      );
+      if (result.isSuccess) {
+        return TaskModel.fromJson(await compute<String, dynamic>(jsonDecode, result.body));
+      }
+      return null;
+    } catch (e) {
+      AppLogger.error(LogCategory.network, 'createTask error: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getGuardianAssignedTasks(int guardianId) async {
+    try {
+      final result = await _http.get(
+        Uri.parse('$_baseUrl/tasks/guardian/$guardianId'),
+        headers: _headers,
+      );
+      if (result.isSuccess) {
+        return await compute<String, dynamic>(jsonDecode, result.body);
+      }
+      return null;
+    } catch (e) {
+      AppLogger.error(LogCategory.network, 'getGuardianAssignedTasks error: $e');
+      return null;
+    }
+  }
+
+  Future<List<TaskModel>> getPendingReminders(int elderId) async {
+    try {
+      final result = await _http.get(
+        Uri.parse('$_baseUrl/tasks/$elderId/pending-reminders'),
+        headers: _headers,
+      );
+      if (result.isSuccess) {
+        final List<dynamic> data = await compute<String, dynamic>(jsonDecode, result.body);
+        return data.map((e) => TaskModel.fromJson(e)).toList();
+      }
+      return [];
+    } catch (e) {
+      AppLogger.error(LogCategory.network, 'getPendingReminders error: $e');
+      return [];
+    }
+  }
+
+  Future<TaskModel?> updateTaskStatus(int taskId, String status, {int? snoozeMinutes}) async {
+    try {
+      final body = {'status': status};
+      if (snoozeMinutes != null) {
+        body['snooze_minutes'] = snoozeMinutes;
+      }
+      final result = await _http.patch(
+        Uri.parse('$_baseUrl/tasks/$taskId/update'),
+        headers: _headers,
+        body: jsonEncode(body),
+      );
+      if (result.isSuccess) {
+        return TaskModel.fromJson(await compute<String, dynamic>(jsonDecode, result.body));
+      }
+      return null;
+    } catch (e) {
+      AppLogger.error(LogCategory.network, 'updateTaskStatus error: $e');
+      return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getTaskTemplates() async {
+    try {
+      final result = await _http.get(
+        Uri.parse('$_baseUrl/tasks/templates'),
+        headers: _headers,
+      );
+      if (result.isSuccess) {
+        final List<dynamic> data = await compute<String, dynamic>(jsonDecode, result.body);
+        return data.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      AppLogger.error(LogCategory.network, 'getTaskTemplates error: $e');
+      return [];
     }
   }
 }
