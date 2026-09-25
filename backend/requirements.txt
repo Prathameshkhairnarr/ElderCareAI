@@ -10,9 +10,10 @@ python-multipart
 firebase-admin
 scikit-learn
 psycopg2-binary
+psycopg[binary]
 edge-tts>=7.0.0
 httpx
 joblib
 pandas
 apscheduler
-xgboost
+xgboost
