@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/sms_model.dart';
 import '../services/api_service.dart';
 import '../services/risk_score_provider.dart';
+import '../services/sms_classifier.dart';
 
 class SmsAnalyzerScreen extends StatefulWidget {
   const SmsAnalyzerScreen({super.key});
@@ -140,6 +141,67 @@ class _SmsAnalyzerScreenState extends State<SmsAnalyzerScreen> {
       ),
     );
   }
+
+  Future<void> _markAsNotScam(SmsModel sms, [int? index]) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mark as Not a Scam?'),
+        content: const Text(
+          'If this message is legitimate (e.g. from your telecom operator or bank), '
+          'marking it safe will whitelist the sender and train our AI to avoid false alarms.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2E7D32),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirm Not a Scam'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final success = await SmsClassifier.reportFalsePositive(
+      sender: sms.sender,
+      message: sms.body,
+    );
+
+    if (sms.riskEntryId != null && !sms.isResolved) {
+      await _api.resolveSmsRisk(sms.riskEntryId!);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      sms.isResolved = true;
+      if (index != null && index < _smsList.length) {
+        _smsList[index].isResolved = true;
+      }
+    });
+
+    _riskProvider.refreshFromEngine();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? '✅ Feedback recorded. Sender whitelisted to prevent false alarms!'
+              : '✅ Sender whitelisted locally.',
+        ),
+        backgroundColor: const Color(0xFF2E7D32),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
 
   @override
   void dispose() {
@@ -640,9 +702,36 @@ class _SmsAnalyzerScreenState extends State<SmsAnalyzerScreen> {
                     ),
                   ),
                 ],
+                if (isFraud) ...[
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _markAsNotScam(sms),
+                      icon: const Icon(Icons.verified_user_outlined, color: Color(0xFF2E7D32)),
+                      label: const Text(
+                        'Not a Scam (Report False Alarm)',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF2E7D32),
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFF2E7D32), width: 1.5),
+                        backgroundColor: const Color(0x112E7D32),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
+
         ],
       ),
     );
@@ -908,12 +997,44 @@ class _SmsAnalyzerScreenState extends State<SmsAnalyzerScreen> {
               const SizedBox(height: 16),
               Row(
                 children: [
+                  // Not Scam Button (Feedback loop)
+                  Expanded(
+                    child: SizedBox(
+                      height: 48,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _markAsNotScam(sms, index),
+                        icon: const Icon(
+                          Icons.verified_user_outlined,
+                          size: 16,
+                        ),
+                        label: const Text(
+                          'Not Scam',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF2E7D32),
+                          side: const BorderSide(
+                            color: Color(0xFF2E7D32),
+                            width: 1.5,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   // Resolve Button
                   Expanded(
                     child: SizedBox(
                       height: 48,
                       child: ElevatedButton.icon(
                         onPressed: () => _resolveMessage(sms, index),
+
                         icon: const Icon(
                           Icons.check_circle_outline_rounded,
                           size: 20,

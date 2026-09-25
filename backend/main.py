@@ -24,6 +24,16 @@ from database.models import Medicine
 from routers import auth, risk, sms, voice, alerts, sos, call_protection, contacts, health, guardian, medication, tasks
 from routers.edge_tts_router import router as edge_tts_router
 from services.risk_service import decay_all_scores
+from services.ml_model import classifier
+
+try:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.triggers.cron import CronTrigger
+    _scheduler = AsyncIOScheduler()
+    _has_apscheduler = True
+except Exception:
+    _scheduler = None
+    _has_apscheduler = False
 
 # ── Structured Logging Setup ──
 logger = logging.getLogger("eldercare")
@@ -113,14 +123,58 @@ async def _decay_loop():
         await asyncio.sleep(3600)  # 1 hour
 
 
+# ── Weekly ML model retraining job (Stage 5 feedback loop) ──
+def _run_weekly_retraining():
+    """Weekly retrain task incorporating ground-truth user correction logs."""
+    db = None
+    try:
+        db = SessionLocal()
+        logger.info("[ML Retrain] Starting weekly model calibration with correction logs...")
+        result = classifier.retrain_with_corrections(db)
+        logger.info(f"[ML Retrain] Calibration completed: {result}")
+    except Exception as e:
+        logger.error(f"[ML Retrain] Calibration job error: {e}")
+    finally:
+        if db:
+            db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup/shutdown lifecycle — auto-seeds DB + starts decay scheduler."""
+    """Startup/shutdown lifecycle — auto-seeds DB + starts decay scheduler + weekly ML retrainer."""
     _auto_seed_medicines()
-    task = asyncio.create_task(_decay_loop())
+    decay_task = asyncio.create_task(_decay_loop())
     logger.info("Risk decay scheduler started (every 1 hour)")
+
+    retrain_task = None
+    if _has_apscheduler and _scheduler:
+        try:
+            _scheduler.add_job(
+                _run_weekly_retraining,
+                trigger=CronTrigger(day_of_week="sun", hour=2, minute=0),
+                id="weekly_ml_retrain",
+                replace_existing=True,
+            )
+            _scheduler.start()
+            logger.info("APScheduler started: weekly model retrain scheduled (every Sunday 02:00 UTC)")
+        except Exception as e:
+            logger.warning(f"Failed to start APScheduler: {e}")
+    else:
+        async def _weekly_loop():
+            while True:
+                await asyncio.sleep(7 * 86400)
+                _run_weekly_retraining()
+        retrain_task = asyncio.create_task(_weekly_loop())
+        logger.info("Asyncio weekly retrain fallback loop started")
+
     yield
-    task.cancel()
+
+    decay_task.cancel()
+    if retrain_task:
+        retrain_task.cancel()
+    if _has_apscheduler and _scheduler and _scheduler.running:
+        _scheduler.shutdown(wait=False)
+
 
 
 app = FastAPI(

@@ -382,4 +382,104 @@ void main() {
       expect(str, contains('type='));
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Multi-Stage Waterfall Classifier (Stages 1 - 5)
+  // ═══════════════════════════════════════════════════════════════
+
+  group('Multi-Stage Waterfall Classifier', () {
+    test('Stage 1 & 2: Airtel missed call notification is SAFE with 0 score', () {
+      final result = SmsClassifier.classify(
+        'You missed a call from +919876543210 on 25-Sep-2026 12:30 PM.',
+        sender: 'AD-AIRTEL',
+      );
+      expect(result.isScam, false);
+      expect(result.riskScore, 0);
+      expect(result.confidenceTier, ConfidenceTier.low);
+      expect(result.label, 'SAFE');
+    });
+
+    test('Stage 1 & 2: Jio data balance alert is SAFE with 0 score', () {
+      final result = SmsClassifier.classify(
+        'Your daily data balance is 1.45 GB, valid till 23:59 hrs.',
+        sender: 'JD-JIOOO',
+      );
+      expect(result.isScam, false);
+      expect(result.riskScore, 0);
+      expect(result.confidenceTier, ConfidenceTier.low);
+    });
+
+    test('Stage 1 & 2: Vodafone recharge confirmation is SAFE with 0 score', () {
+      final result = SmsClassifier.classify(
+        'Recharge of Rs 299 done successfully. Unlimited calls and 1.5GB/day data.',
+        sender: 'TM-VODAFONE',
+      );
+      expect(result.isScam, false);
+      expect(result.riskScore, 0);
+      expect(result.confidenceTier, ConfidenceTier.low);
+    });
+
+    test('Stage 2: Informational missed call without sender header is still SAFE', () {
+      final result = SmsClassifier.classify(
+        'You missed a call from +919876543210 at 10:15 AM',
+      );
+      expect(result.isScam, false);
+      expect(result.riskScore, 0);
+      expect(result.confidenceTier, ConfidenceTier.low);
+    });
+
+    test('Stage 3: High-confidence credential phishing from non-DLT sender', () {
+      final result = SmsClassifier.classify(
+        'Dear customer your SBI account will be blocked today. '
+        'Verify your Aadhaar and update KYC immediately: https://sbi-kyc.xyz/login',
+        sender: '+919876543210',
+      );
+      expect(result.isScam, true);
+      expect(result.riskScore, greaterThanOrEqualTo(60));
+      expect(result.confidenceTier, ConfidenceTier.high);
+    });
+
+    test('Stage 3: Unlisted callback request with urgency is flagged', () {
+      final result = SmsClassifier.classify(
+        'Electricity bill unpaid. Power will be disconnected tonight. Call officer at 9876543210 immediately.',
+        sender: 'NOTICE',
+      );
+      expect(result.isScam, true);
+      expect(result.riskScore, greaterThanOrEqualTo(25));
+    });
+
+    test('Stage 4: Confidence Tiers correctly mapped', () {
+      final highRisk = SmsClassifier.classify(
+        'Immediate action required! Your account will be closed in 12 hours. '
+        'Share your OTP and verify details: http://bank-verify.xyz',
+      );
+      expect(highRisk.confidenceTier, ConfidenceTier.high);
+
+      final safe = SmsClassifier.classify(
+        'Hey dad, remember to take your evening pills after dinner.',
+      );
+      expect(safe.confidenceTier, ConfidenceTier.low);
+    });
+
+    test('Stage 5: Dynamic header whitelist promotion', () async {
+      const customHeader = 'VK-COMMUNITY';
+
+      // Before promotion: random text from this header with payment ask
+      final before = SmsClassifier.classify(
+        'Important update regarding your community account.',
+        sender: customHeader,
+      );
+      // Promote header to local whitelist
+      await SmsClassifier.promoteHeaderToWhitelist(customHeader);
+
+      // Now classified as DLT_TRUSTED
+      final after = SmsClassifier.classify(
+        'Important update regarding your community account.',
+        sender: customHeader,
+      );
+      expect(after.isScam, false);
+      expect(after.riskScore, 0);
+    });
+  });
 }
+

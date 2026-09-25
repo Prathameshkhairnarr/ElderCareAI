@@ -6,11 +6,18 @@ from typing import List
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from datetime import datetime, timezone
+from sqlalchemy import desc, func
 
 from database.engine import get_db
-from database.models import User, SmsAnalysis, Alert, RiskEntry
-from schemas.schemas import SmsRequest, SmsResponse, SmsHistoryItem
+from database.models import User, SmsAnalysis, Alert, RiskEntry, CorrectionLog
+from schemas.schemas import (
+    SmsRequest,
+    SmsResponse,
+    SmsHistoryItem,
+    FalsePositiveRequest,
+    FalsePositiveResponse,
+)
 from services.auth_service import get_current_user
 from services.analysis_service import analyze_sms
 from services.risk_service import add_risk_entry
@@ -129,3 +136,76 @@ def analyze_sms_endpoint(
     db.commit()
     db.refresh(record)
     return SmsResponse.model_validate(record)
+
+
+@router.post("/false-positive", response_model=FalsePositiveResponse)
+def report_false_positive(
+    body: FalsePositiveRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Log a false-positive user correction (Stage 5 feedback loop).
+    - Appends entry to correction_logs table
+    - Resolves linked active risk entry if present
+    - Checks if 3+ distinct users marked the same sender header as false-positive;
+      if so, flags promoted_to_whitelist = True.
+    """
+    sender = body.sender_header.strip().upper() if body.sender_header else None
+
+    # Check if this user already reported this exact message_hash
+    existing = (
+        db.query(CorrectionLog)
+        .filter(
+            CorrectionLog.user_id == current_user.id,
+            CorrectionLog.message_hash == body.message_hash,
+        )
+        .first()
+    )
+    if not existing:
+        log_entry = CorrectionLog(
+            user_id=current_user.id,
+            sender_header=sender,
+            message_hash=body.message_hash,
+            message_content=body.message_content,
+            false_positive=body.false_positive,
+        )
+        db.add(log_entry)
+
+    # Auto-resolve active risk entry for this user + message_hash
+    risk_entry = (
+        db.query(RiskEntry)
+        .filter(
+            RiskEntry.user_id == current_user.id,
+            RiskEntry.source_id == body.message_hash,
+            RiskEntry.status == "ACTIVE",
+        )
+        .first()
+    )
+    if risk_entry:
+        risk_entry.status = "RESOLVED"
+        risk_entry.resolved_at = datetime.now(timezone.utc)
+
+    db.commit()
+
+    promoted = False
+    if sender:
+        # Count distinct users who marked this sender_header as false positive
+        distinct_users = (
+            db.query(func.count(func.distinct(CorrectionLog.user_id)))
+            .filter(
+                CorrectionLog.sender_header == sender,
+                CorrectionLog.false_positive == True,
+            )
+            .scalar() or 0
+        )
+        if distinct_users >= 3:
+            promoted = True
+
+    return FalsePositiveResponse(
+        status="success",
+        message="Correction logged. Whitelist and models will incorporate this ground truth.",
+        promoted_to_whitelist=promoted,
+        sender_header=sender,
+    )
+

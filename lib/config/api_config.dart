@@ -6,7 +6,7 @@ class ApiConfig {
   // ── Gemini AI Configuration ──
   static final String geminiApiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
 
-  static const String geminiModel = 'gemini-2.0-flash';
+  static const String geminiModel = 'gemini-3.5-flash';
 
   static String get geminiEndpoint =>
       'https://generativelanguage.googleapis.com/v1beta/models/$geminiModel:generateContent?key=$geminiApiKey';
@@ -34,7 +34,7 @@ class ApiConfig {
   static String get azureOpenAiEndpoint {
     if (azureOpenAiKey.startsWith('ghp_') ||
         azureOpenAiKey.startsWith('github_pat_')) {
-      return 'https://models.inference.ai.azure.com/chat/completions';
+      return 'https://models.github.ai/inference/chat/completions';
     }
     return 'https://$azureOpenAiResource.openai.azure.com/openai/deployments/'
         '$azureOpenAiDeployment/chat/completions?api-version=$azureOpenAiApiVersion';

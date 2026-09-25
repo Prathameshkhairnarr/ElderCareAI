@@ -182,5 +182,19 @@ class RiskStateResponse(BaseModel):
     last_scam_at: Optional[datetime]
 
 
+class FalsePositiveRequest(BaseModel):
+    sender_header: Optional[str] = None
+    message_hash: str
+    message_content: Optional[str] = None
+    false_positive: bool = True
+
+
+class FalsePositiveResponse(BaseModel):
+    status: str
+    message: str
+    promoted_to_whitelist: bool = False
+    sender_header: Optional[str] = None
+
+
 # Resolve forward reference
 TokenResponse.model_rebuild()

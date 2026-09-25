@@ -1,23 +1,36 @@
 /// On-device SMS scam classifier — zero network, instant results.
-/// Multi-signal weighted scoring engine optimized for Indian scam patterns.
+/// Multi-stage WATERFALL pipeline optimized for Indian scam patterns.
 ///
 /// HARDENED: Never crashes on any input — null, empty, oversized all handled.
 ///
-/// Phases implemented:
-///   1. Heuristic Intelligence (reward, domain, urgency, wallet/gambling)
-///   2. Smart Risk Scoring Engine (weighted signals, risk bands)
-///   3. Indian Scam Pattern Pack (bank impersonation, lookalike domains)
-///   4. Template Memory System (fuzzy fingerprinting, memory-bounded)
-///   5. False Negative Coverage (tested against real-world samples)
-///   6. Safety & Stability (defensive guards, no blocking, no heavy regex)
-///   7. Telemetry (structured [SMS][AI] logs)
+/// Pipeline stages:
+///   STAGE 1 — Sender Identity Check (DLT Header Whitelist)
+///             + Informational Template Matcher
+///   STAGE 2 — OTP / Transaction / Delivery safe-pattern bypass
+///   STAGE 3 — Intent-Based Scam Scoring (weighted intent signals)
+///   STAGE 4 — Confidence Tiers for Elder-Facing Alerts
+///
+/// Each stage can early-exit SAFE before reaching the next.
 library;
 
-import 'dart:math' show min;
+import 'dart:convert';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'api_service.dart';
 
 // ═══════════════════════════════════════════════════════════════════
 //  DATA MODEL
 // ═══════════════════════════════════════════════════════════════════
+
+/// Confidence tier for elder-facing alert severity.
+enum ConfidenceTier {
+  /// HIGH → loud voice alert + red banner
+  high,
+  /// MEDIUM → silent log + shows in Alert History, no voice alert
+  medium,
+  /// LOW / SAFE → no action
+  low,
+}
 
 class SmsClassification {
   final bool isScam;
@@ -25,6 +38,7 @@ class SmsClassification {
   final String scamType;
   final String explanation;
   final String label;
+  final ConfidenceTier confidenceTier;
 
   const SmsClassification({
     required this.isScam,
@@ -32,11 +46,12 @@ class SmsClassification {
     required this.scamType,
     required this.explanation,
     required this.label,
+    this.confidenceTier = ConfidenceTier.low,
   });
 
   @override
   String toString() =>
-      'SmsClassification(label=$label, risk=$riskScore, type=$scamType)';
+      'SmsClassification(label=$label, risk=$riskScore, type=$scamType, tier=${confidenceTier.name})';
 }
 
 /// Safe default for any error or empty input
@@ -46,6 +61,7 @@ const _safeDefault = SmsClassification(
   scamType: 'safe',
   explanation: 'No suspicious patterns',
   label: 'SAFE',
+  confidenceTier: ConfidenceTier.low,
 );
 
 // ═══════════════════════════════════════════════════════════════════
@@ -127,8 +143,201 @@ class ScamTemplateMemory {
 class SmsClassifier {
   SmsClassifier._();
 
+  // ═══════════════════════════════════════════════════════════════
+  //  STAGE 1 — DLT HEADER WHITELIST (loaded from carrier_headers.json)
+  // ═══════════════════════════════════════════════════════════════
+
+  /// DLT sender header regex: 2-letter prefix + hyphen + 3-8 alphanumeric
+  static final _dltHeaderPattern = RegExp(r'^[A-Z]{2}-[A-Z0-9]{3,8}$');
+
+  /// Cached set of all known-safe DLT suffixes from carrier_headers.json.
+  /// Loaded lazily on first classify() call.
+  static Set<String>? _loadedDltSuffixes;
+  static List<RegExp>? _loadedInfoTemplates;
+  static bool _assetLoadAttempted = false;
+  static final Set<String> _userPromotedWhitelist = <String>{};
+
+  /// Auto-promote or manually add a sender header to local whitelist (Stage 5 feedback loop).
+  static Future<void> promoteHeaderToWhitelist(String header) async {
+    final clean = header.trim().toUpperCase();
+    if (clean.isEmpty) return;
+    _userPromotedWhitelist.add(clean);
+    if (clean.contains('-')) {
+      final parts = clean.split('-');
+      if (parts.length == 2 && parts[1].isNotEmpty) {
+        _userPromotedWhitelist.add(parts[1]);
+      }
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList('user_promoted_dlt_headers') ?? [];
+      if (!list.contains(clean)) {
+        list.add(clean);
+        await prefs.setStringList('user_promoted_dlt_headers', list);
+      }
+    } catch (_) {}
+  }
+
+  /// Report false-positive from alert screen (Stage 5 feedback loop).
+  static Future<bool> reportFalsePositive({
+    String? sender,
+    required String message,
+  }) async {
+    try {
+      if (sender != null && sender.trim().isNotEmpty) {
+        await promoteHeaderToWhitelist(sender.trim().toUpperCase());
+      }
+      final res = await ApiService().reportFalsePositive(
+        senderHeader: sender,
+        messageContent: message,
+      );
+      if (res != null && res['promoted_to_whitelist'] == true && sender != null) {
+        await promoteHeaderToWhitelist(sender.trim().toUpperCase());
+      }
+      return res != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Load carrier_headers.json from Flutter assets into memory.
+  /// Called once lazily. If asset is missing, falls back to the
+  /// hardcoded _dltTrustedSenders set below.
+  static Future<void> loadCarrierHeaders() async {
+    if (_assetLoadAttempted) return;
+    _assetLoadAttempted = true;
+    try {
+      // Load user promoted whitelist from SharedPreferences
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final promoted = prefs.getStringList('user_promoted_dlt_headers') ?? [];
+        _userPromotedWhitelist.addAll(promoted);
+      } catch (_) {}
+
+      final jsonStr = await rootBundle.loadString('assets/carrier_headers.json');
+      final Map<String, dynamic> data = jsonDecode(jsonStr) as Map<String, dynamic>;
+
+      final suffixes = <String>{};
+      for (final key in data.keys) {
+        if (key.startsWith('_')) continue; // skip _meta
+        if (key == 'informational_templates') continue;
+        final list = data[key];
+        if (list is List) {
+          for (final item in list) {
+            if (item is String) suffixes.add(item.toUpperCase());
+          }
+        }
+      }
+      _loadedDltSuffixes = suffixes;
+
+      // Parse informational_templates as compiled RegExps
+      final templates = <RegExp>[];
+      final tplList = data['informational_templates'];
+      if (tplList is List) {
+        for (final pattern in tplList) {
+          if (pattern is String) {
+            try {
+              templates.add(RegExp(pattern, caseSensitive: false));
+            } catch (_) {
+              // Skip malformed regex in JSON
+            }
+          }
+        }
+      }
+      _loadedInfoTemplates = templates;
+    } catch (_) {
+      // Asset not found or parse error — will fall back to hardcoded set
+      _loadedDltSuffixes = null;
+      _loadedInfoTemplates = null;
+    }
+  }
+
+  /// Stage 1A: Check if sender matches a known DLT-registered header.
+  /// Returns true if sender is a verified DLT business — always safe.
+  static bool _isDltWhitelistedSender(String senderUpper) {
+    // 0. Check dynamic user-promoted whitelist
+    if (_userPromotedWhitelist.contains(senderUpper)) return true;
+    for (final promoted in _userPromotedWhitelist) {
+      if (senderUpper.endsWith('-$promoted') || senderUpper == promoted) return true;
+    }
+
+    // Fast path: check against loaded JSON suffixes
+    final suffixSet = _loadedDltSuffixes ?? _dltTrustedSenders;
+
+
+    // Direct suffix match (e.g., "AIRTEL" is in set)
+    for (final suffix in suffixSet) {
+      if (senderUpper == suffix ||
+          senderUpper.endsWith('-$suffix') ||
+          senderUpper.contains(suffix)) {
+        return true;
+      }
+    }
+
+    // Check DLT format: XX-XXXXXX
+    if (_dltHeaderPattern.hasMatch(senderUpper)) {
+      final parts = senderUpper.split('-');
+      if (parts.length == 2) {
+        final suffix = parts[1];
+        for (final known in suffixSet) {
+          if (suffix == known ||
+              (known.length >= 3 && suffix.startsWith(known.substring(0, 3)))) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Stage 1B: Check if message body matches a known NON-SCAM
+  /// informational template (missed call, balance, recharge, etc.).
+  /// These templates NEVER contribute to scam score.
+  static bool _matchesInformationalTemplate(String textLower) {
+    // Use loaded JSON templates if available
+    if (_loadedInfoTemplates != null && _loadedInfoTemplates!.isNotEmpty) {
+      for (final rx in _loadedInfoTemplates!) {
+        if (rx.hasMatch(textLower)) return true;
+      }
+    }
+    // Hardcoded fallback templates (always present)
+    for (final rx in _builtinInfoTemplates) {
+      if (rx.hasMatch(textLower)) return true;
+    }
+    return false;
+  }
+
+  /// Built-in informational templates that suppress false positives.
+  /// These match legitimate telecom/bank/delivery notifications.
+  static final _builtinInfoTemplates = <RegExp>[
+    // Missed call notifications (the original problem)
+    RegExp(r'you (missed|had|received) a call from \+?91?\d{7,10}', caseSensitive: false),
+    RegExp(r'missed call.{0,20}\+?91?\d{7,10}', caseSensitive: false),
+    // Balance/recharge confirmations
+    RegExp(r'your (data|talktime|main|account) balance is', caseSensitive: false),
+    RegExp(r'recharge (of rs|successful|done|for)', caseSensitive: false),
+    RegExp(r'last recharge of rs', caseSensitive: false),
+    // Plan/validity info
+    RegExp(r'your (plan|pack|validity) (expires?|is valid till|will end)', caseSensitive: false),
+    RegExp(r'your (prepaid|postpaid) number', caseSensitive: false),
+    // SIM lifecycle
+    RegExp(r'your sim.{0,15}(activated|deactivated|ported)', caseSensitive: false),
+    RegExp(r'welcome to (airtel|jio|vi|bsnl|vodafone)', caseSensitive: false),
+    // Transaction alerts (bank)
+    RegExp(r'(rs|inr|₹)\s*[\d,.]+\s*(has been |was )?(credited|debited)', caseSensitive: false),
+    // Bill info from utility
+    RegExp(r'your (bill|invoice) (for|of|amount) (rs|inr|₹)', caseSensitive: false),
+    // Delivery/order pure status (no links, no action needed)
+    RegExp(r'your order.{0,30}(delivered|shipped|dispatched|out for delivery)', caseSensitive: false),
+    // Appointment/flight
+    RegExp(r'appointment.{0,20}(confirmed|scheduled|rescheduled)', caseSensitive: false),
+    RegExp(r'flight .{0,10}(confirmed|cancelled|delayed|boarding)', caseSensitive: false),
+    // OTP messages (explicit pattern)
+    RegExp(r'otp (is|for|:)\s*\d{4,8}', caseSensitive: false),
+  ];
+
   // ─────────────────────────────────────────────────────────────────
-  //  PHASE 1 — KEYWORD SETS
+  //  KEYWORD SETS (preserved for Stage 3 intent extraction)
   // ─────────────────────────────────────────────────────────────────
 
   // ── Original keyword sets (preserved for backward compatibility) ──
@@ -1606,37 +1815,15 @@ class SmsClassifier {
   }
 
   // ─────────────────────────────────────────────────────────────────
-  //  INDIAN DLT SENDER WHITELIST (TRAI Regulated)
+  //  DLT SENDER WHITELIST — Hardcoded fallback (used when JSON not loaded)
   // ─────────────────────────────────────────────────────────────────
 
-  /// Check if sender matches known DLT trusted sender patterns.
-  /// DLT senders are TRAI-regulated and NEVER send scam messages.
-  static bool _isDltTrustedSender(String senderUpper) {
-    // Check exact match or suffix match (e.g., "JM-AIRTEL" or just "AIRTEL")
-    for (final trusted in _dltTrustedSenders) {
-      if (senderUpper == trusted ||
-          senderUpper.endsWith('-$trusted') ||
-          senderUpper.contains(trusted)) {
-        return true;
-      }
-    }
-    // Check DLT format: XX-XXXXXX (2 letter prefix + hyphen + 5-6 alphanumeric)
-    if (RegExp(r'^[A-Z]{2}-[A-Z0-9]{5,6}$').hasMatch(senderUpper)) {
-      // It's DLT format — check against known prefixes
-      final suffix = senderUpper.split('-').last;
-      for (final trusted in _dltTrustedSenders) {
-        if (suffix == trusted || suffix.startsWith(trusted.substring(0, trusted.length > 3 ? 3 : trusted.length))) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  /// TRAI DLT Registered Sender IDs (India)
+  /// TRAI DLT Registered Sender IDs (India) — hardcoded fallback.
+  /// The primary list is loaded from assets/carrier_headers.json.
   static const _dltTrustedSenders = <String>{
     // Telecom
-    'AIRTEL', 'JIO', 'BSNL', 'VODAFONE', 'VI', 'IDEA', 'TATADOCOMO', 'TATA', 'MTS',
+    'AIRTEL', 'AIRTL', 'JIO', 'JIOOO', 'BSNL', 'BSNLM', 'VODAFO', 'VI', 'VIIND',
+    'IDEA', 'IDEACL', 'TATADO', 'TATASKY', 'TATA', 'MTS', 'MTNL',
     // Banks (Public)
     'SBIINB', 'SBIPSG', 'SBMSMS', 'PNBSMS', 'BOBIMT', 'BOISMS', 'CANBNK',
     'UNIONB', 'CENTBK', 'INDBNK', 'ALBANK', 'SYNBNK', 'UCOBNK', 'OBCSMS',
@@ -1648,7 +1835,7 @@ class SmsClassifier {
     // Payment & Fintech
     'PAYTMB', 'PAYTMS', 'PAYTM', 'PHONEPE', 'FREECHARGE', 'MOBIKWIK',
     'AMAZON', 'FLIPKRT', 'GPAY', 'CRED', 'SLICE', 'BHARPE', 'LAZYPAY',
-    'SIMPL', 'JUPITER', 'FAMPAY', 'NIYO',
+    'SIMPL', 'JUPITER', 'FAMPAY', 'NIYO', 'RAZORP', 'CASHFR',
     // Insurance
     'LICIND', 'LICOFS', 'HDFCLI', 'ICICIP', 'SBILIC', 'BAJALI',
     'STARHI', 'NIACIN', 'UNITEDI', 'RELIGI', 'MAXLIF', 'KOTAKL',
@@ -1658,11 +1845,11 @@ class SmsClassifier {
     'BESCOM', 'MSEDCL', 'TPDDL', 'CESC', 'WBSEDCL',
     'MAHAGS', 'IOCL', 'HPCL', 'BPCL', 'ATPGAS',
     // E-commerce & Delivery
-    'MYNTRA', 'MEESHO', 'SNAPDL', 'BLUDRТ', 'DELHVR', 'EKART',
+    'MYNTRA', 'MEESHO', 'SNAPDL', 'DELHVR', 'EKART',
     'XPRESB', 'SHADOWF', 'ZOMATO', 'SWIGGY', 'BLINKT', 'ZEPTO', 'DUNZO', 'BIGBSK',
     // OTT & Services
     'NETFLIX', 'PRIMEVD', 'HOTSTAR', 'JIOTVS', 'AIRTVS',
-    'TATASKY', 'DISHNW', 'SONYLT',
+    'DISHNW', 'SONYLT',
   };
 
   // ─────────────────────────────────────────────────────────────────
@@ -1734,7 +1921,103 @@ class SmsClassifier {
   //  PHASE 2 — SMART RISK SCORING ENGINE
   // ─────────────────────────────────────────────────────────────────
 
-  /// Classify an SMS message using multi-signal weighted scoring.
+  // ═══════════════════════════════════════════════════════════════
+  //  STAGE 3 — INTENT-BASED SCAM SCORING
+  // ═══════════════════════════════════════════════════════════════
+
+  /// The 5 intent signals used in Stage 3.
+  /// Each returns a weighted score contribution.
+  /// A message must cross a MINIMUM COMBINED THRESHOLD to be flagged.
+
+  /// Intent 1: Has shortened or unknown URL (weight: HIGH = 35)
+  static int _intentShortenedOrUnknownUrl(List<String> urls) {
+    if (urls.isEmpty) return 0;
+    for (final url in urls) {
+      if (_isSuspiciousDomain(url)) return 35;
+    }
+    // Any link from non-trusted domain is somewhat suspicious
+    for (final url in urls) {
+      final domain = _extractDomain(url);
+      bool isTrusted = false;
+      for (final td in _trustedDomains) {
+        if (domain == td || domain.endsWith('.$td')) {
+          isTrusted = true;
+          break;
+        }
+      }
+      if (!isTrusted) return 25;
+    }
+    return 0;
+  }
+
+  /// Intent 2: Asks for OTP/PIN/CVV/KYC (weight: VERY HIGH = 40)
+  static int _intentAsksForCredentials(String textLower) {
+    final credentialAsks = [
+      'share your otp', 'share otp', 'tell otp', 'send otp',
+      'share your pin', 'share pin', 'enter pin', 'enter your pin',
+      'share cvv', 'enter cvv', 'tell cvv',
+      'share your password', 'enter password',
+      'share mpin', 'enter mpin', 'share upi pin',
+      'update kyc', 'complete kyc', 'kyc update', 'verify kyc',
+      'kyc expire', 'kyc suspend', 'kyc block',
+      'share card number', 'enter card details',
+      'apna otp batao', 'otp bhejo', 'pin batao',
+    ];
+    for (final ask in credentialAsks) {
+      if (textLower.contains(ask)) return 40;
+    }
+    return 0;
+  }
+
+  /// Intent 3: Urgency language + call-to-action COMBO (weight: MEDIUM = 20)
+  /// Only scores if BOTH urgency AND action are present — not either alone.
+  static int _intentUrgencyWithAction(Set<String> urgencyHits, String textLower) {
+    if (urgencyHits.isEmpty) return 0;
+    final actionWords = ['click', 'verify', 'update', 'pay', 'login', 'download',
+                         'call now', 'call back', 'reply', 'tap here'];
+    final hasAction = actionWords.any((w) => textLower.contains(w));
+    return hasAction ? 20 : 0;
+  }
+
+  /// Intent 4: Impersonates bank/govt WITHOUT matching DLT header (weight: HIGH = 30)
+  /// Sender claims to be "SBI"/"Income Tax" but header doesn't match.
+  static int _intentImpersonatesWithoutDlt(
+    String textLower,
+    Set<String> impersonationHits,
+    String? sender,
+  ) {
+    if (impersonationHits.isEmpty) return 0;
+    // If sender IS a known DLT sender, this is not impersonation
+    if (sender != null && sender.isNotEmpty) {
+      final senderUpper = sender.toUpperCase().trim();
+      if (_isDltWhitelistedSender(senderUpper)) return 0;
+      // If sender is in XX-XXXXXX format, give partial credit
+      if (_dltHeaderPattern.hasMatch(senderUpper)) return 10;
+    }
+    // No DLT match but claims authority → high impersonation signal
+    return 30;
+  }
+
+  /// Intent 5: Requests callback to unlisted number (weight: MEDIUM = 20)
+  static int _intentCallbackToUnlistedNumber(String textLower) {
+    final callbackPatterns = [
+      RegExp(r'call (us |back |now )?\+?\d{10,12}', caseSensitive: false),
+      RegExp(r'whatsapp \+?\d{10,12}', caseSensitive: false),
+      RegExp(r'contact.{0,10}\+?\d{10,12}', caseSensitive: false),
+      RegExp(r'(call|dial|reach).{0,15}\d{10,12}', caseSensitive: false),
+    ];
+    for (final rx in callbackPatterns) {
+      if (rx.hasMatch(textLower)) return 20;
+    }
+    return 0;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  MAIN WATERFALL CLASSIFIER — STAGE 1 THROUGH STAGE 4
+  // ═══════════════════════════════════════════════════════════════
+
+  /// Classify an SMS through the multi-stage waterfall pipeline.
+  /// Each stage can early-exit SAFE before reaching the next.
   /// Runs synchronously, no I/O.
   /// NEVER throws — returns safe default on any error.
   static SmsClassification classify(
@@ -1746,7 +2029,9 @@ class SmsClassifier {
   }) {
     if (message == null || message.trim().isEmpty) return _safeDefault;
 
-    // --- TRUECALLER-STYLE CONTACT BYPASS ---
+    // ══════════════════════════════════════════════════════
+    // PRE-STAGE: Contact bypass (existing logic preserved)
+    // ══════════════════════════════════════════════════════
     if (isContact) {
       return const SmsClassification(
         isScam: false,
@@ -1754,22 +2039,8 @@ class SmsClassifier {
         scamType: 'Contact',
         explanation: 'Message is from a verified saved contact. Bypassed filters.',
         label: 'SAFE',
+        confidenceTier: ConfidenceTier.low,
       );
-    }
-
-    // --- DLT SENDER WHITELIST (TRAI Regulated) ---
-    // If sender matches known DLT ID, it's a verified business. ALWAYS SAFE.
-    if (sender != null && sender.isNotEmpty) {
-      final senderUpper = sender.toUpperCase().trim();
-      if (_isDltTrustedSender(senderUpper)) {
-        return SmsClassification(
-          isScam: false,
-          riskScore: 0,
-          scamType: 'DLT_TRUSTED',
-          explanation: '[SAFE] Verified DLT sender: $sender. TRAI-regulated business.',
-          label: 'SAFE',
-        );
-      }
     }
 
     try {
@@ -1780,16 +2051,71 @@ class SmsClassifier {
       final textLower = safeMessage.toLowerCase();
       final words = textLower.split(RegExp(r'\s+'));
       final wordSet = words.toSet();
-
       final urls = _extractUrls(safeMessage);
       final hasLinks = urls.isNotEmpty;
-      
-      // --- CONTEXT-BASED SAFE PATTERNS ---
-      
-      // 1. OTP Messages (from any sender)
+
+      // ══════════════════════════════════════════════════════
+      // STAGE 1A — DLT Sender Identity Check
+      //
+      // If sender matches a known DLT-registered header AND
+      // the message body matches an informational template,
+      // auto-classify as SAFE with high confidence.
+      // ══════════════════════════════════════════════════════
+      if (sender != null && sender.isNotEmpty) {
+        final senderUpper = sender.toUpperCase().trim();
+        if (_isDltWhitelistedSender(senderUpper)) {
+          // STAGE 1B — Informational Template Matcher
+          // Known DLT sender + informational template → guaranteed SAFE
+          if (_matchesInformationalTemplate(textLower)) {
+            return SmsClassification(
+              isScam: false,
+              riskScore: 0,
+              scamType: 'DLT_INFORMATIONAL',
+              explanation: '[SAFE] DLT sender $sender + informational template. No scam intent.',
+              label: 'SAFE',
+              confidenceTier: ConfidenceTier.low,
+            );
+          }
+          // Known DLT sender but non-template body → still very likely safe.
+          // Only flag if it has suspicious links (rare edge case: hijacked DLT).
+          if (!hasLinks || !urls.any((u) => _isSuspiciousDomain(u))) {
+            return SmsClassification(
+              isScam: false,
+              riskScore: 0,
+              scamType: 'DLT_TRUSTED',
+              explanation: '[SAFE] Verified DLT sender: $sender. TRAI-regulated business.',
+              label: 'SAFE',
+              confidenceTier: ConfidenceTier.low,
+            );
+          }
+        }
+      }
+
+      // ══════════════════════════════════════════════════════
+      // STAGE 2 — Context-Based Safe Pattern Bypass
+      //
+      // OTP, transaction alerts, delivery updates, recharge
+      // confirmations → early exit SAFE.
+      // (Existing logic preserved from original classifier)
+      // ══════════════════════════════════════════════════════
+
+      // Also check informational templates even for non-DLT senders,
+      // but only if there are no suspicious links.
+      if (_matchesInformationalTemplate(textLower) && !hasLinks) {
+        return SmsClassification(
+          isScam: false,
+          riskScore: 0,
+          scamType: 'Informational',
+          explanation: '[SAFE] Matches known informational template. Not a scam.',
+          label: 'SAFE',
+          confidenceTier: ConfidenceTier.low,
+        );
+      }
+
+      // OTP Messages (from any sender)
       final hasOtpCode = _otpPattern.hasMatch(textLower);
       final hasOtpWords = _otpWords.any((w) => textLower.contains(w));
-      
+
       if (hasOtpCode && hasOtpWords && !hasLinks) {
         return const SmsClassification(
           isScam: false,
@@ -1797,21 +2123,23 @@ class SmsClassifier {
           scamType: 'OTP / Authentication',
           explanation: '[SAFE] Standard OTP message with no malicious intent.',
           label: 'SAFE',
+          confidenceTier: ConfidenceTier.low,
         );
       }
 
-      // 2. Transaction Alerts (debit/credit from bank-like sender)
-      if (_isTransactionAlert(textLower, sender)) {
+      // Transaction Alerts (genuine bank transaction alerts do NOT contain links to third-party sites)
+      if (_isTransactionAlert(textLower, sender) && !hasLinks) {
         return const SmsClassification(
           isScam: false,
           riskScore: 0,
           scamType: 'Transaction Alert',
           explanation: '[SAFE] Bank transaction notification.',
           label: 'SAFE',
+          confidenceTier: ConfidenceTier.low,
         );
       }
 
-      // 3. Delivery Updates (no suspicious links)
+      // Delivery Updates (no suspicious links)
       if (_isDeliveryUpdate(textLower) && !hasLinks) {
         return const SmsClassification(
           isScam: false,
@@ -1819,10 +2147,11 @@ class SmsClassifier {
           scamType: 'Delivery Update',
           explanation: '[SAFE] Package/order delivery notification.',
           label: 'SAFE',
+          confidenceTier: ConfidenceTier.low,
         );
       }
 
-      // 4. Recharge Confirmations
+      // Recharge Confirmations
       if (_isRechargeConfirmation(textLower)) {
         return const SmsClassification(
           isScam: false,
@@ -1830,16 +2159,24 @@ class SmsClassifier {
           scamType: 'Recharge Confirmation',
           explanation: '[SAFE] Mobile recharge/plan confirmation.',
           label: 'SAFE',
+          confidenceTier: ConfidenceTier.low,
         );
       }
 
-      // Signal detection 
+      // ══════════════════════════════════════════════════════
+      // STAGE 3 — Intent-Based Scam Scoring
+      //
+      // Score = weighted sum of 5 INTENT categories, not raw
+      // keyword count. A message must cross a MINIMUM COMBINED
+      // THRESHOLD to be flagged.
+      // ══════════════════════════════════════════════════════
+
+      // Extract keyword hits (still needed for intent detection)
       final urgencyHits = _matchKeywords(wordSet, textLower, _urgencyWords);
       final financialHits = _matchKeywords(wordSet, textLower, _financialWords);
       final impersonationHits = _matchKeywords(wordSet, textLower, _impersonationWords);
       final threatHits = _matchKeywords(wordSet, textLower, _threatWords);
       final rewardHits = _matchKeywords(wordSet, textLower, _rewardWords);
-      
       final jobHits = _matchKeywords(wordSet, textLower, _jobWords);
       final deliveryHits = _matchKeywords(wordSet, textLower, _deliveryWords);
       final electricityHits = _matchKeywords(wordSet, textLower, _electricityWords);
@@ -1849,281 +2186,222 @@ class SmsClassifier {
 
       final hasSuspiciousDomain = urls.any((url) => _isSuspiciousDomain(url));
       final hasBankImpersonation = _detectBankImpersonation(textLower, urls);
-
-      // Template memory check 
       final matchesKnownTemplate = ScamTemplateMemory.isSimilarToKnown(safeMessage);
 
-      int score = 0;
-      final reasons = <String>[];
-      final signals = <String, int>{}; 
+      // ── Compute 5 intent signals ──
+      final intentUrl = _intentShortenedOrUnknownUrl(urls);
+      final intentCredential = _intentAsksForCredentials(textLower);
+      final intentUrgencyAction = _intentUrgencyWithAction(urgencyHits, textLower);
+      final intentImpersonation = _intentImpersonatesWithoutDlt(textLower, impersonationHits, sender);
+      final intentCallback = _intentCallbackToUnlistedNumber(textLower);
 
-      // --- ADVANCED BEHAVIORAL CHECKS ---
+      // Base intent score (sum of the 5 intent signals)
+      int intentScore = intentUrl + intentCredential + intentUrgencyAction +
+                        intentImpersonation + intentCallback;
+
+      final reasons = <String>[];
+      final signals = <String, int>{};
+
+      if (intentUrl > 0) {
+        signals['intent_suspicious_url'] = intentUrl;
+        reasons.add('Suspicious/unknown URL (+$intentUrl)');
+      }
+      if (intentCredential > 0) {
+        signals['intent_asks_credentials'] = intentCredential;
+        reasons.add('Asks for OTP/PIN/CVV/KYC (+$intentCredential)');
+      }
+      if (intentUrgencyAction > 0) {
+        signals['intent_urgency_action'] = intentUrgencyAction;
+        reasons.add('Urgency + call-to-action combo (+$intentUrgencyAction)');
+      }
+      if (intentImpersonation > 0) {
+        signals['intent_impersonation_no_dlt'] = intentImpersonation;
+        reasons.add('Impersonates authority without DLT header (+$intentImpersonation)');
+      }
+      if (intentCallback > 0) {
+        signals['intent_callback_unlisted'] = intentCallback;
+        reasons.add('Requests callback to unlisted number (+$intentCallback)');
+      }
+
+      // ── Additional scoring signals (legacy, still relevant) ──
+      int supplementaryScore = 0;
+
+      // Sender analysis
       if (sender != null && sender.isNotEmpty) {
         if (RegExp(r'^\+?[0-9]{10,12}$').hasMatch(sender.trim())) {
-          // Scams typically come from 10-digit mobile numbers. Links from these are highly dangerous.
           if (hasLinks) {
-             score += 40;
-             signals['sender_mobile_with_link'] = 40;
-             reasons.add('Random mobile number sent a link (+40)');
+            supplementaryScore += 40;
+            signals['sender_mobile_with_link'] = 40;
+            reasons.add('Random mobile number sent a link (+40)');
           } else {
-             score += 20;
-             signals['sender_random_mobile'] = 20;
-             reasons.add('Sender appears to be a random mobile number (+20)');
+            supplementaryScore += 15;
+            signals['sender_random_mobile'] = 15;
+            reasons.add('Sender is a random mobile number (+15)');
           }
-        } else if (RegExp(r'^[A-Z]{2}-[A-Z0-9]{5,6}$').hasMatch(sender.trim().toUpperCase())) {
-          // India DLT ID Format (e.g., AD-HDFCBK)
-          final senderLower = sender.toLowerCase();
-          final isWhitelisted = ['hdfc', 'sbi', 'airtel', 'jio', 'paytm', 'icici', 'zomato', 'swiggy', 'amazon', 'flpkrt', 'myntra', 'uber', 'ola', 'pnb', 'axis', 'google'].any((t) => senderLower.contains(t));
-          
-          if (isWhitelisted && !hasSuspiciousDomain) {
-            score -= 50; // Trusted verified business
-            signals['sender_trusted'] = -50;
-            reasons.add('Verified DLT Business Partner (-50)');
-          } else if (!hasLinks && urgencyHits.isEmpty && threatHits.isEmpty) {
-            score -= 10; // Unrecognized DLT, but no suspicious links/words
+        } else if (_dltHeaderPattern.hasMatch(sender.trim().toUpperCase())) {
+          // Unknown DLT format — mild trust signal
+          if (!hasLinks && urgencyHits.isEmpty && threatHits.isEmpty) {
+            supplementaryScore -= 10;
             signals['sender_dlt_neutral'] = -10;
-            reasons.add('Verified DLT Sender format (-10)');
+            reasons.add('Unknown DLT format, no suspicious signals (-10)');
           }
-        } else if (['hdfc', 'sbi', 'airtel', 'jio', 'paytm', 'icici', 'amazon', 'swiggy', 'zomato'].any((t) => sender.toLowerCase().contains(t))) {
-           score -= 40;
-           signals['sender_trusted'] = -40;
-           reasons.add('Trusted sender pattern (-40)');
+        } else if (['hdfc', 'sbi', 'airtel', 'jio', 'paytm', 'icici',
+                    'amazon', 'swiggy', 'zomato'].any((t) => sender.toLowerCase().contains(t))) {
+          supplementaryScore -= 30;
+          signals['sender_trusted_name'] = -30;
+          reasons.add('Sender name matches trusted brand (-30)');
         }
       }
 
       if (isRepeated) {
-        score += 30;
-        signals['high_frequency'] = 30;
-        reasons.add('High frequency: similar message repeated (+30)');
+        supplementaryScore += 20;
+        signals['high_frequency'] = 20;
+        reasons.add('High frequency: similar message repeated (+20)');
       }
 
       if (textLower.contains('dear user') || textLower.contains('dear customer')) {
-        score += 10;
-        signals['generic_greeting'] = 10;
-        reasons.add('Generic greeting used (+10)');
+        supplementaryScore += 8;
+        signals['generic_greeting'] = 8;
+        reasons.add('Generic greeting used (+8)');
       }
 
+      // ALL CAPS detection
       int upperCount = 0;
       for (int i = 0; i < safeMessage.length; i++) {
-        if (safeMessage[i].toUpperCase() == safeMessage[i] && safeMessage[i].toLowerCase() != safeMessage[i].toUpperCase()) {
+        if (safeMessage[i].toUpperCase() == safeMessage[i] &&
+            safeMessage[i].toLowerCase() != safeMessage[i].toUpperCase()) {
           upperCount++;
         }
       }
       double upperRatio = safeMessage.isNotEmpty ? upperCount / safeMessage.length : 0;
       if (upperRatio > 0.4 || safeMessage.contains('!!!')) {
-        score += 15;
-        signals['unnatural_language'] = 15;
-        reasons.add('Unnatural language/ALL CAPS/punctuation (+15)');
+        supplementaryScore += 10;
+        signals['unnatural_language'] = 10;
+        reasons.add('Unnatural language/ALL CAPS (+10)');
       }
 
-      final actionWords = ['click', 'verify', 'update', 'pay', 'login', 'download'];
-      if (actionWords.any((w) => textLower.contains(w))) {
-        score += 25;
-        signals['action_intended'] = 25;
-        reasons.add('Action intended (click/verify/pay) (+25)');
-      }
-
-      final manipulativePhrases = ['turant verify karo', 'account band ho jayega', 'paise jeete ho', 'block ho jayega'];
+      // Multi-language manipulation
+      final manipulativePhrases = ['turant verify karo', 'account band ho jayega',
+                                   'paise jeete ho', 'block ho jayega'];
       if (manipulativePhrases.any((p) => textLower.contains(p))) {
-        score += 20;
-        signals['multi_lang_manipulation'] = 20;
-        reasons.add('Manipulative multi-language phrase detected (+20)');
+        supplementaryScore += 15;
+        signals['multi_lang_manipulation'] = 15;
+        reasons.add('Manipulative Hinglish phrase (+15)');
       }
 
+      // Unusual hour
       if (timeReceived != null) {
         final hour = timeReceived.hour;
         if (hour >= 23 || hour <= 6) {
-          score += 10;
-          signals['unusual_hour'] = 10;
-          reasons.add('Arrived at unusual hour (+10)');
+          supplementaryScore += 5;
+          signals['unusual_hour'] = 5;
+          reasons.add('Arrived at unusual hour (+5)');
         }
       }
 
-      // 2. STEP 2: TRUSTED MESSAGE DETECTION
+      // Trusted word suppression
       final isInformational = _trustedWords.any((w) => textLower.contains(w));
       if (isInformational && !hasLinks && urgencyHits.isEmpty && threatHits.isEmpty) {
-        score -= 40;
-        reasons.add('Informational/Transactional alert');
+        supplementaryScore -= 30;
+        reasons.add('Contains informational keywords (-30)');
       }
 
-      if (score < 0) score = 0;
-
-      // 3. STEP 3: SCAM SIGNAL DETECTION
-      if (urgencyHits.isNotEmpty) {
-        score += 20;
-        signals['urgency'] = 20;
-        reasons.add('Urgency: ${urgencyHits.take(2).join(", ")}');
-      }
-
-      if (financialHits.isNotEmpty && (urgencyHits.isNotEmpty || threatHits.isNotEmpty || hasLinks || hasOtpWords)) {
-        score += 20;
-        signals['financial'] = 20;
-        reasons.add('Financial: ${financialHits.take(2).join(", ")}');
-      }
-
-      if (impersonationHits.isNotEmpty) {
-        score += 25;
-        signals['impersonation'] = 25;
-        reasons.add('Authority Impersonation: ${impersonationHits.take(2).join(", ")}');
-      }
-
-      if (threatHits.isNotEmpty) {
-        score += 25;
-        signals['threat'] = 25;
-        reasons.add('Threat/Fear: ${threatHits.take(2).join(", ")}');
-      }
-
+      // Category-specific boosters
       if (rewardHits.isNotEmpty) {
-        score += 25;
-        signals['reward'] = 25;
-        reasons.add('Reward/Lottery: ${rewardHits.take(2).join(", ")}');
+        supplementaryScore += 15;
+        signals['reward_scam'] = 15;
+        reasons.add('Reward/Lottery signals: ${rewardHits.take(2).join(", ")}');
+      }
+      if (rewardHits.isNotEmpty && hasLinks) {
+        supplementaryScore += 20;
+        signals['combo_reward_link'] = 20;
+        reasons.add('Combo: Reward + Link');
+      }
+      if (hasSuspiciousDomain) {
+        supplementaryScore += 25;
+        signals['suspicious_domain'] = 25;
+        reasons.add('Suspicious domain detected');
       }
 
       if (jobHits.isNotEmpty) {
-        score += 30;
-        signals['job_scam'] = 30;
-        reasons.add('Job Scam: ${jobHits.take(2).join(", ")}');
+        supplementaryScore += 20;
+        signals['job_scam'] = 20;
+        reasons.add('Job scam signals: ${jobHits.take(2).join(", ")}');
       }
-
-      if (deliveryHits.isNotEmpty) {
-        score += 25;
-        signals['delivery_scam'] = 25;
-        reasons.add('Delivery Scam: ${deliveryHits.take(2).join(", ")}');
+      if (threatHits.isNotEmpty) {
+        supplementaryScore += 15;
+        signals['threat'] = 15;
+        reasons.add('Threat/Fear: ${threatHits.take(2).join(", ")}');
       }
-
-      if (electricityHits.isNotEmpty) {
-        score += 30;
-        signals['electricity_scam'] = 30;
-        reasons.add('Electricity Scam: ${electricityHits.take(2).join(", ")}');
+      if (hasBankImpersonation) {
+        supplementaryScore += 30;
+        signals['brand_mimicking_domain'] = 30;
+        reasons.add('Domain mimicking real brand detected');
       }
-
-      if (gasHits.isNotEmpty) {
-        score += 25;
-        signals['gas_scam'] = 25;
-        reasons.add('Gas/Utility Scam: ${gasHits.take(2).join(", ")}');
-      }
-
-      if (simHits.isNotEmpty) {
-        score += 25;
-        signals['sim_scam'] = 25;
-        reasons.add('SIM/Telecom Scam: ${simHits.take(2).join(", ")}');
-      }
-
-      if (kycHits.isNotEmpty) {
-        score += 25;
-        signals['kyc_fraud'] = 25;
-        reasons.add('KYC Scam: ${kycHits.take(2).join(", ")}');
-      }
-
-      // 4. STEP 4: LINK ANALYSIS
-      if (hasLinks) {
-        score += 20;
-        signals['link_present'] = 20;
-        reasons.add('Contains link');
-        
-        
-          // URL Behavior Simulation
-          for (final rawUrl in urls) {
-            final u = rawUrl.toLowerCase();
-            if (RegExp(r'[a-z]+\d+[a-z]+').hasMatch(u)) {
-              score += 20;
-              signals['digits_in_domain'] = 20;
-              reasons.add('Numbers inside domain (+20)');
-            }
-            if ('-'.allMatches(u).length >= 2) {
-              score += 20;
-              signals['multiple_hyphens'] = 20;
-              reasons.add('Multiple hyphens in domain (+20)');
-            }
-            if ('/'.allMatches(u).length > 4) {
-              score += 20;
-              signals['long_path'] = 20;
-              reasons.add('Long suspicious path (+20)');
-            }
-          }
-        if (hasSuspiciousDomain) {
-          score += 40;
-          signals['suspicious_domain'] = 40;
-          reasons.add('Suspicious domain detected');
-        } else if (hasBankImpersonation) {
-          score += 50;
-          signals['brand_mimicking_domain'] = 50;
-          reasons.add('Domain mimicking real brand detected');
-        }
-      }
-
-      // 5. STEP 5: COMBINATION BOOST
-      if (urgencyHits.isNotEmpty && hasLinks) {
-        score += 30;
-        signals['combo_urgency_link'] = 30;
-        reasons.add('Combo: Urgency + Link');
-      } else if (impersonationHits.isNotEmpty && threatHits.isNotEmpty) {
-        score += 30;
-        signals['combo_auth_threat'] = 30;
-        reasons.add('Combo: Authority + Threat');
-      } else if (rewardHits.isNotEmpty && hasLinks) {
-        score += 30;
-        signals['combo_reward_link'] = 30;
-        reasons.add('Combo: Reward + Link');
-      } else if (financialHits.isNotEmpty && hasLinks) {
-        score += 30;
-        signals['combo_pay_link'] = 30;
-        reasons.add('Combo: Payment request + Link');
-      }
-
       if (matchesKnownTemplate) {
-        score += 15;
-        signals['template_match'] = 15;
+        supplementaryScore += 10;
+        signals['template_match'] = 10;
         reasons.add('Matches known scam template');
       }
 
-      // Limit score
-      score = score.clamp(0, 100);
+      // ── Combine: intent-based score + supplementary signals ──
+      int finalScore = (intentScore + supplementaryScore).clamp(0, 100);
 
       // Determine Category
       String scamType = 'safe';
       if (jobHits.isNotEmpty) scamType = 'job_scam';
-      else if (electricityHits.isNotEmpty) scamType = 'electricity_scam';
-      else if (deliveryHits.isNotEmpty) scamType = 'delivery_scam';
-      else if (kycHits.isNotEmpty) scamType = 'kyc_fraud';
-      else if (impersonationHits.isNotEmpty) scamType = 'impersonation';
+      else if (electricityHits.isNotEmpty && intentScore > 0) scamType = 'electricity_scam';
+      else if (kycHits.isNotEmpty && intentScore > 0) scamType = 'kyc_fraud';
+      else if (impersonationHits.isNotEmpty && intentImpersonation > 0) scamType = 'impersonation';
       else if (threatHits.isNotEmpty) scamType = 'threat_scam';
       else if (rewardHits.isNotEmpty) scamType = 'reward_scam';
-      else if (hasLinks && urgencyHits.isNotEmpty) scamType = 'phishing';
-      else if (hasLinks && score >= 25) scamType = 'suspicious_link';
-      else if (score >= 25) scamType = 'suspicious';
+      else if (hasBankImpersonation) scamType = 'phishing';
+      else if (hasLinks && hasSuspiciousDomain) scamType = 'suspicious_link';
+      else if (finalScore >= 25) scamType = 'suspicious';
 
-      // 6. STEP 8: FINAL CONFLICT RESOLUTION
-      if (hasOtpWords && !hasLinks && score < 50) {
-        score = 0;
+      // Final OTP safety net
+      if (hasOtpWords && !hasLinks && finalScore < 50) {
+        finalScore = 0;
         scamType = 'OTP / Authentication';
         reasons.insert(0, 'Resolved as Safe OTP');
       }
 
-      // 7. STEP 7: FINAL SCORING
+      // ══════════════════════════════════════════════════════
+      // STAGE 4 — Confidence Tiers for Elder-Facing Alerts
+      //
+      // HIGH: score >= 60 → loud voice alert + red banner
+      // MEDIUM: score 25-59 → silent log + Alert History only
+      // LOW: score < 25 → no action
+      // ══════════════════════════════════════════════════════
+
       bool isScam = false;
       String verdict;
-      
-      if (score >= 50) {
+      ConfidenceTier tier;
+
+      if (finalScore >= 60) {
         verdict = 'SCAM';
         isScam = true;
-      } else if (score >= 25) {
+        tier = ConfidenceTier.high;
+      } else if (finalScore >= 25) {
         verdict = 'SUSPICIOUS';
         isScam = true;
+        tier = ConfidenceTier.medium;
       } else {
         verdict = 'SAFE';
         isScam = false;
+        tier = ConfidenceTier.low;
       }
 
       // Backward compatibility label
       String label = verdict;
-      if (score >= 50 && hasLinks && (hasSuspiciousDomain || hasBankImpersonation || scamType == 'phishing')) {
+      if (finalScore >= 60 && hasLinks &&
+          (hasSuspiciousDomain || hasBankImpersonation || scamType == 'phishing')) {
         label = 'PHISHING_LINK';
-      } else if (score >= 25 && score < 50) {
-        label = 'SCAM'; // Suspicious conventionally mapped to SCAM for users previously
+      } else if (finalScore >= 25 && finalScore < 60) {
+        label = 'SCAM'; // SUSPICIOUS mapped to SCAM label for backward compat
       }
 
-      if (isScam && score >= 40) {
+      if (isScam && finalScore >= 40) {
         ScamTemplateMemory.remember(safeMessage);
       }
 
@@ -2133,10 +2411,11 @@ class SmsClassifier {
 
       return SmsClassification(
         isScam: isScam,
-        riskScore: score,
+        riskScore: finalScore,
         scamType: scamType,
         explanation: '[$verdict] ${reasons.join(" | ")}',
         label: label,
+        confidenceTier: tier,
       );
     } catch (_) {
       return _safeDefault;

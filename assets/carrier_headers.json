@@ -1,0 +1,120 @@
+{
+  "_meta": {
+    "version": 1,
+    "description": "Indian DLT-registered sender header prefixes for safe-sender bypass",
+    "last_updated": "2026-09-25",
+    "format": "Each key is a category. Values are arrays of sender suffixes that appear after the 2-letter DLT prefix (e.g. AD-AIRTEL → suffix is AIRTEL)."
+  },
+  "telecom": [
+    "AIRTEL", "AIRTL", "ARTLNW", "JIO", "JIOOO", "JIOFBR",
+    "BSNL", "BSNLM", "BSNLOB",
+    "VODAFO", "VI", "VIIND",
+    "IDEA", "IDEACL",
+    "TATADO", "TATASKY", "TATA",
+    "MTS", "MTNL"
+  ],
+  "bank_public": [
+    "SBIINB", "SBIPSG", "SBMSMS", "SBIBNK", "SBIATM",
+    "PNBSMS", "PNBALR",
+    "BOBIMT", "BOISMS", "BOBBNK",
+    "CANBNK", "CANARA",
+    "UNIONB", "UBIBNK",
+    "CENTBK",
+    "INDBNK", "IBKL",
+    "ALBANK", "ALBNK",
+    "SYNBNK",
+    "UCOBNK",
+    "OBCSMS",
+    "IOBSMS",
+    "ANDBSM",
+    "VIJBNK",
+    "DENABN",
+    "CORPBK",
+    "MAHABK", "MAHABN"
+  ],
+  "bank_private": [
+    "HDFCBK", "HDFCBN", "HDFCSM",
+    "ICICIB", "ICICBA", "ICICBK",
+    "AXISBK", "AXISBN",
+    "KOTAKB", "KOTKBK",
+    "YESBNK", "YESBK",
+    "INDUSB", "INDULK",
+    "FEDBK", "FEDBNK",
+    "KVBSMS",
+    "DCBBNK",
+    "RBLBNK",
+    "IDBIBK",
+    "BANDHN",
+    "AUBANK",
+    "SURYOD",
+    "CSBBNK"
+  ],
+  "fintech": [
+    "PAYTMB", "PAYTMS", "PAYTM",
+    "PHONEPE", "PHNPE",
+    "FREECH", "MOBIKW",
+    "AMAZON", "AMZN",
+    "FLIPKRT", "FLPKRT",
+    "GPAY", "GOOGLP",
+    "CRED", "CREDAP",
+    "SLICE", "BHARPE", "LAZYPY",
+    "SIMPL", "JUPTER", "FAMPAY", "NIYO",
+    "RAZORP", "CASHFR", "PAYSNS"
+  ],
+  "government": [
+    "UIDAI", "AADHAR",
+    "IRCTC", "IRCTCW",
+    "EPFOHO", "EPFO",
+    "NSDL", "CDSL",
+    "SEBI", "RBI", "RBIIND",
+    "INCOMETX", "ITDEPT",
+    "GSTNOF", "GSTNET",
+    "COWIN", "COVAC",
+    "NHMSMS", "NHM",
+    "AYUSHM",
+    "PMKISAN", "PMJDY",
+    "NPCI", "NPCIL",
+    "AAROGYA"
+  ],
+  "utility": [
+    "BESCOM", "MSEDCL", "TPDDL", "CESC", "WBSEDCL",
+    "UPPCL", "DHBVN", "HBVN", "TSSPRD", "TANGED",
+    "MAHAGS", "IOCL", "HPCL", "BPCL", "ATPGAS",
+    "INDANE", "HPGAS", "BHRTGS"
+  ],
+  "ecommerce": [
+    "MYNTRA", "MEESHO", "SNAPDL",
+    "DELHVR", "EKART", "XPRESB",
+    "SHADOWF", "ECOMEX",
+    "ZOMATO", "SWIGGY", "BLINKT",
+    "ZEPTO", "DUNZO", "BIGBSK",
+    "JIOMART"
+  ],
+  "ott_services": [
+    "NTFLIX", "NETFLIX",
+    "PRIMEVD", "PRIME",
+    "HOTSTR", "HOTSTAR",
+    "JIOTVS", "JIOTV",
+    "AIRTVS",
+    "TATASKY", "TATASK",
+    "DISHNW",
+    "SONYLT", "SONYLV"
+  ],
+  "informational_templates": [
+    "you (missed|had) a call from \\+?91?\\d{10}",
+    "your (data|talktime|main) balance is",
+    "recharge (of rs|successful|done)",
+    "(rs|inr|₹)\\s*[\\d,]+\\.?\\d*\\s*(has been |was )?(credited|debited)",
+    "your (plan|pack|validity) (expires?|is valid till)",
+    "your sim (has been |is )?(activated|deactivated|ported)",
+    "last recharge of rs",
+    "your (prepaid|postpaid) number",
+    "dear customer.{0,20}(balance|validity|plan)",
+    "your (bill|invoice) (for|of|amount) (rs|inr|₹)",
+    "otp (is|for|:) \\d{4,8}",
+    "your order.{0,30}(delivered|shipped|dispatched|out for delivery)",
+    "flight .{0,10}(confirmed|cancelled|delayed|boarding)",
+    "appointment.{0,20}(confirmed|scheduled|rescheduled)",
+    "welcome to (airtel|jio|vi|bsnl|vodafone)"
+  ]
+}

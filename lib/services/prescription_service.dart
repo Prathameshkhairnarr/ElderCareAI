@@ -13,14 +13,28 @@ class PrescriptionService {
   factory PrescriptionService() => _instance;
   PrescriptionService._();
 
-  // ── Use Dedicated GitHub Models endpoint (GPT-4o) ──
-  // We use a separate standalone token exclusively for the Ai Doctor scanner
-  // to avoid draining the standard voice token.
-  String get _endpoint => 'https://models.inference.ai.azure.com/chat/completions';
 
   static const String _systemInstruction = '''
 You are a highly intelligent AI medical assistant called Doctor Veda.
 You are an EXPERT at reading handwritten doctor prescriptions — even messy, unclear, or abbreviated ones.
+
+CRITICAL FIRST STEP — IMAGE VALIDATION:
+Before doing anything else, check whether the provided image is actually a doctor's prescription, pharmacy bill/slip, medical test report, or medicine package/strip.
+- If the image is NOT a prescription or medical document (for example: selfies, persons, random objects, vehicles, animals, nature, household items, grocery bills, computer screens, random text/books, blank or dark photos, etc.):
+DO NOT output the medical analysis sections.
+INSTEAD, immediately output this exact Hinglish message format:
+
+❌ **Yeh Doctor Ki Prescription Nahi Hai**
+
+Aapne jo photo bheji hai, yeh doctor ki prescription nahi lag rahi hai.
+(Explain what the photo actually shows in 1-2 simple, polite Hinglish sentences. E.g. "Yeh kisi cheez/screen/vyakti ki photo hai, dawai ya doctor ki parchi nahi hai.")
+
+📸 **Kripya Sahi Photo Upload Karein**:
+- Doctor dwara likhi gayi parchi (Prescription slip) ki saaf aur seedhi photo kheenche.
+- Ya fir dawai ke patte (strip) ya dibbe ki clear photo upload karein.
+- Light achhi rakhein taaki doctor ki likhawat aur dawaiyon ke naam saaf dikhein.
+
+- ONLY IF the image IS a valid doctor prescription or medicine list, proceed with full analysis:
 
 CRITICAL CAPABILITY:
 - You CAN read doctor handwriting. Doctors write in a specific medical shorthand you understand.
@@ -106,8 +120,6 @@ Respond strictly in this Markdown format with DOUBLE SPACE (new lines) between e
 
 ⚠️ **Disclaimer**:
 Ye information sirf aapki better understanding ke liye hai. In dawaiyon ka dose ya time apni marzi se na badlein, humesha apne asli doctor ki aagya ka palan karein.
-
-IMPORTANT: Even if the handwriting is difficult, TRY YOUR BEST to read it. Use medical context to make educated guesses. Only say you cannot read it if the image is truly blank or completely unrelated to medicine.
 ''';
 
   /// Detect MIME type from file extension
@@ -142,20 +154,19 @@ IMPORTANT: Even if the handwriting is difficult, TRY YOUR BEST to read it. Use m
 
     final fileSize = await imageFile.length();
     final mimeType = _getMimeType(imageFile);
-      AppLogger.info(
+    AppLogger.info(
       LogCategory.network,
       '[RX] ▶ Starting prescription analysis\n'
-      '    🤖 Agent Identity: RX Reader-Viraj\n'
       '    📁 File: ${imageFile.path}\n'
       '    📏 Size: ${(fileSize / 1024).toStringAsFixed(1)} KB\n'
       '    🏷️ MIME: $mimeType\n'
-      '    🤖 Model: GPT-4o (Azure/GitHub)\n'
-      '    🔑 Token: ${ApiConfig.visionGithubToken.isNotEmpty ? "configured (${ApiConfig.visionGithubToken.substring(0, 8)}...)" : "❌ MISSING"}',
+      '    🤖 Model: ${ApiConfig.geminiModel} (Google Gemini Vision)\n'
+      '    🔑 Key: ${ApiConfig.geminiApiKey.isNotEmpty ? "configured (${ApiConfig.geminiApiKey.substring(0, 8)}...)" : "❌ MISSING"}',
     );
 
-    if (ApiConfig.visionGithubToken.isEmpty) {
-      AppLogger.error(LogCategory.network, '[RX] ❌ Dedicated Vision GitHub token is missing.');
-      throw Exception('Vision API key is missing. Please add VISION_GITHUB_TOKEN in your .env file.');
+    if (ApiConfig.geminiApiKey.isEmpty) {
+      AppLogger.error(LogCategory.network, '[RX] ❌ Gemini API key is missing.');
+      throw Exception('Gemini API key is missing. Please add GEMINI_API_KEY in your .env file.');
     }
 
     try {
@@ -167,52 +178,101 @@ IMPORTANT: Even if the handwriting is difficult, TRY YOUR BEST to read it. Use m
         '[RX] ✅ Base64 encoded — ${base64Image.length} chars (${(base64Image.length / 1024).toStringAsFixed(1)} KB)',
       );
 
-      // ── Step 3: Build request payload for OpenAI ──
-      // Always expect it to be a github token since we explicitly isolated the system.
+      // ── Step 3: Build request payload for Gemini Vision ──
       final requestBody = {
-        'model': 'gpt-4o', // GitHub Models natively supports this model parameter
-        'messages': [
-          {
-            'role': 'system',
-            'content': _systemInstruction
-          },
+        'system_instruction': {
+          'parts': [
+            {'text': _systemInstruction}
+          ]
+        },
+        'contents': [
           {
             'role': 'user',
-            'content': [
+            'parts': [
               {
-                'type': 'text',
-                'text': 'Please carefully read this handwritten doctor prescription image. Extract all medicine names, dosages, and timings. Explain everything in simple Hinglish for an elderly person. Even if handwriting is messy, try your best to read it using medical context.'
+                'text':
+                    'Please first verify whether this image is a doctor prescription, pharmacy slip, medical report, or medicine package. If it is NOT a prescription, tell the user clearly in Hinglish as instructed. If it IS a prescription, extract all medicine names, dosages, timings, and explanations in simple Hinglish for an elderly person.'
               },
               {
-                'type': 'image_url',
-                'image_url': {
-                  'url': 'data:$mimeType;base64,$base64Image'
+                'inline_data': {
+                  'mime_type': mimeType,
+                  'data': base64Image,
                 }
               }
             ]
           }
         ],
-        'temperature': 0.4,
-        'max_tokens': 2048,
+        'generationConfig': {
+          'temperature': 0.3,
+          'maxOutputTokens': 2048,
+        },
       };
 
       final headers = <String, String>{
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ${ApiConfig.visionGithubToken}',
       };
 
-      AppLogger.info(LogCategory.network, '[RX] 📤 Sending request to GitHub Models (GPT-4o Vision)...');
+      // ── Step 4: Make API call with model fallback and retry ──
+      // gemini-3-flash-preview is prioritized as it has the best uptime.
+      final candidateModels = <String>{
+        'gemini-3-flash-preview',
+        ApiConfig.geminiModel,
+        'gemini-3.5-flash',
+        'gemini-3.7-flash',
+        'gemini-flash-latest',
+      }.toList();
 
-      // ── Step 4: Make API call ──
-      final response = await http
-          .post(
-            Uri.parse(_endpoint),
-            headers: headers,
-            body: jsonEncode(requestBody),
-          )
-          .timeout(const Duration(seconds: 40));
+      http.Response? response;
+
+      for (final model in candidateModels) {
+        final endpoint =
+            'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=${ApiConfig.geminiApiKey}';
+
+        for (int attempt = 1; attempt <= 2; attempt++) {
+          try {
+            AppLogger.info(LogCategory.network, '[RX] 📤 Sending request to Gemini Vision ($model, attempt $attempt)...');
+            response = await http
+                .post(
+                  Uri.parse(endpoint),
+                  headers: headers,
+                  body: jsonEncode(requestBody),
+                )
+                .timeout(const Duration(seconds: 90));
+
+            if (response.statusCode == 200) {
+              break;
+            }
+
+            if (response.statusCode == 401 || response.statusCode == 403) {
+              throw Exception('Invalid Gemini API Key or permissions issue.');
+            }
+
+            AppLogger.warn(
+              LogCategory.network,
+              '[RX] ⚠️ Model $model attempt $attempt returned HTTP ${response.statusCode}',
+            );
+            if (attempt == 1) {
+              await Future.delayed(const Duration(milliseconds: 1500));
+            }
+          } catch (netErr) {
+            if (netErr.toString().contains('Invalid Gemini API Key')) rethrow;
+            AppLogger.warn(LogCategory.network, '[RX] ⚠️ Model $model network error: $netErr');
+            if (attempt == 1) {
+              await Future.delayed(const Duration(milliseconds: 1500));
+            }
+          }
+        }
+
+        if (response != null && response.statusCode == 200) {
+          break;
+        }
+      }
 
       stopwatch.stop();
+
+      if (response == null) {
+        throw Exception('Internet connection problem. Kripya apna network check karein aur Retry dabayein.');
+      }
 
       AppLogger.info(
         LogCategory.network,
@@ -226,42 +286,53 @@ IMPORTANT: Even if the handwriting is difficult, TRY YOUR BEST to read it. Use m
             : response.body;
         AppLogger.error(
           LogCategory.network,
-          '[RX] ❌ Azure API error:\n'
+          '[RX] ❌ Gemini API error:\n'
           '    Status: ${response.statusCode}\n'
           '    Body: $errorPreview',
         );
-        
-        
-        if (response.statusCode == 401) {
-           throw Exception('Invalid Azure API Key.');
+
+        if (response.statusCode == 503) {
+          throw Exception('Google AI server par temporary traffic zyada hai (503 High Demand). Kripya 5-10 second baad Retry button dabayein.');
         }
-        
+
         if (response.statusCode == 429) {
-           throw Exception('OpenAI API Quota Exceeded.');
+          throw Exception('Gemini API Quota Exceeded. Kripya thodi der baad dobara koshish karein.');
         }
-        
+
         throw Exception('API Error: ${response.statusCode}');
       }
 
-      // ── Step 6: Parse response (OpenAI format) ──
+      // ── Step 6: Parse Gemini response ──
       final json = jsonDecode(response.body) as Map<String, dynamic>;
-      
+
       if (json.containsKey('error')) {
         final err = json['error'];
-        throw Exception(err['message'] ?? 'Unknown Azure OpenAI API error');
+        final msg = err is Map ? (err['message'] ?? 'Gemini API Error') : err.toString();
+        throw Exception(msg);
       }
 
-      final choices = json['choices'] as List<dynamic>?;
-      if (choices == null || choices.isEmpty) {
+      final candidates = json['candidates'] as List<dynamic>?;
+      if (candidates == null || candidates.isEmpty) {
         throw Exception('No response generated by AI model.');
       }
 
-      final message = choices[0]['message'] as Map<String, dynamic>?;
-      if (message == null) throw Exception('Malformed message object from AI.');
+      final firstCandidate = candidates[0] as Map<String, dynamic>?;
+      final content = firstCandidate?['content'] as Map<String, dynamic>?;
+      if (content == null) throw Exception('Malformed content object from AI.');
 
-      final resultText = (message['content'] as String?)?.trim();
+      final parts = content['parts'] as List<dynamic>?;
+      if (parts == null || parts.isEmpty) throw Exception('Empty response parts from AI.');
 
-      if (resultText == null || resultText.isEmpty) {
+      final buffer = StringBuffer();
+      for (final part in parts) {
+        if (part is Map && part['text'] != null) {
+          buffer.write(part['text']);
+        }
+      }
+
+      final resultText = buffer.toString().trim();
+
+      if (resultText.isEmpty) {
         throw Exception('Empty response from AI.');
       }
 
@@ -285,7 +356,7 @@ IMPORTANT: Even if the handwriting is difficult, TRY YOUR BEST to read it. Use m
         '    Time elapsed: ${stopwatch.elapsedMilliseconds}ms\n'
         '    Stack: ${stack.toString().split('\n').take(5).join('\n    ')}',
       );
-      return null;
+      rethrow;
     }
   }
 }

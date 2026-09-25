@@ -102,6 +102,24 @@ class ResilientHttp {
     );
   }
 
+  // ── PATCH ──
+  Future<HttpResult> patch(
+    Uri url, {
+    Map<String, String>? headers,
+    Object? body,
+    Duration? timeout,
+    int retries = 0,
+  }) async {
+    return _withRetry(
+      retries: retries,
+      label: 'PATCH ${url.path}',
+      headers: headers,
+      action: (h) => http
+          .patch(url, headers: h, body: body)
+          .timeout(timeout ?? defaultWriteTimeout),
+    );
+  }
+
   // ── DELETE ──
   Future<HttpResult> delete(
     Uri url, {

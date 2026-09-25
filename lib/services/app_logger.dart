@@ -9,7 +9,7 @@ library;
 
 import 'dart:collection';
 
-enum LogCategory { sms, sos, network, auth, risk, shake, lifecycle }
+enum LogCategory { sms, sos, network, auth, risk, shake, lifecycle, voice }
 
 enum LogLevel { info, warn, error }
 

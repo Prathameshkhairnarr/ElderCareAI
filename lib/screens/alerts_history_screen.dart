@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
+import '../services/sms_classifier.dart';
 import 'package:intl/intl.dart';
 
 class AlertsHistoryScreen extends StatefulWidget {
@@ -146,6 +147,68 @@ class _AlertsHistoryScreenState extends State<AlertsHistoryScreen> {
     }
   }
 
+  Future<void> _markAsNotScam(dynamic alert, int index) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mark as Not a Scam?'),
+        content: const Text(
+          'If this alert is a false alarm (e.g. telecom balance or genuine bank SMS), '
+          'marking it safe will whitelist the sender and train our AI to avoid this warning in the future.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2E7D32),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirm Not a Scam'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final details = alert['details']?.toString() ?? '';
+    String? sender;
+    String message = details;
+
+    final senderMatch = RegExp(r'From:\s*([^\n\r]+)', caseSensitive: false).firstMatch(details);
+    if (senderMatch != null) {
+      sender = senderMatch.group(1)?.trim();
+    }
+    final msgMatch = RegExp(r'Message:\s*([^\n\r]+)', caseSensitive: false).firstMatch(details);
+    if (msgMatch != null) {
+      message = msgMatch.group(1)?.trim() ?? details;
+    }
+
+    final success = await SmsClassifier.reportFalsePositive(
+      sender: sender,
+      message: message,
+    );
+
+    await _deleteAlert(alert['id'], index);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? '✅ Feedback recorded. Sender whitelisted to prevent false alarms!'
+                : '✅ Sender whitelisted locally.',
+          ),
+          backgroundColor: const Color(0xFF2E7D32),
+        ),
+      );
+    }
+  }
+
   Color _getSeverityColor(String severity) {
     switch (severity.toLowerCase()) {
       case 'critical':
@@ -254,6 +317,26 @@ class _AlertsHistoryScreenState extends State<AlertsHistoryScreen> {
                                     ),
                                   ),
                                   const Spacer(),
+                                  if (alert['alert_type']?.toString().contains('sms') == true ||
+                                      alert['alert_type']?.toString().contains('scam') == true) ...[
+                                    TextButton.icon(
+                                      onPressed: () => _markAsNotScam(alert, index),
+                                      icon: const Icon(Icons.verified_user_outlined, size: 16),
+                                      label: const Text(
+                                        'Not a Scam',
+                                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                      ),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Colors.green.shade700,
+                                        backgroundColor: Colors.green.withOpacity(0.1),
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
                                   IconButton(
                                     onPressed: () => _deleteAlert(alert['id'], index),
                                     icon: const Icon(Icons.delete_outline_rounded),

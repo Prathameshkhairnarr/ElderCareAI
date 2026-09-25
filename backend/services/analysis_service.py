@@ -3,7 +3,12 @@ SMS and Voice fraud analysis using rule-based detection.
 """
 import re
 from dataclasses import dataclass
-from services.ml_model import classifier
+from services.ml_model import (
+    classifier,
+    is_dlt_registered_sender,
+    matches_informational_template,
+    extract_intent_features,
+)
 
 
 @dataclass
@@ -311,6 +316,33 @@ def _analyze_text(text: str, metadata: dict = None) -> AnalysisResult:
     links = LINK_PATTERN.findall(text)
     has_links = bool(links)
 
+    sender = metadata.get("sender", "") if metadata else ""
+
+    # ── STAGE 1 & 2: DLT Header Whitelist & Informational Template Matcher ──
+    if sender and is_dlt_registered_sender(sender):
+        if matches_informational_template(clean_text):
+            return AnalysisResult(
+                is_scam=False,
+                confidence=0,
+                category="DLT_INFORMATIONAL",
+                explanation=f"[SAFE] Verified DLT entity ({sender}) with legitimate informational notification.",
+            )
+        elif not has_links:
+            return AnalysisResult(
+                is_scam=False,
+                confidence=0,
+                category="DLT_TRUSTED",
+                explanation=f"[SAFE] Verified DLT business sender ({sender}) with no suspicious links.",
+            )
+
+    if matches_informational_template(clean_text) and not has_links:
+        return AnalysisResult(
+            is_scam=False,
+            confidence=0,
+            category="Informational",
+            explanation="[SAFE] Matches standard non-scam informational notification template.",
+        )
+
     # 1. STEP 1: HARD SAFE OVERRIDE
     has_otp_code = bool(OTP_PATTERN.search(clean_text))
     has_otp_words = any(w in clean_text for w in OTP_WORDS)
@@ -512,12 +544,27 @@ def _analyze_text(text: str, metadata: dict = None) -> AnalysisResult:
     elif has_links and score >= 25: category = "suspicious_link"
     elif score >= 25: category = "suspicious"
 
-    # ── ML Analysis Integration ───────────────────────────
-    ml_result = classifier.predict(text)
-    ml_confidence = ml_result["confidence"]
-    
-    # Weight: 60% Rule-based, 40% ML
-    final_score = int((score * 0.6) + (ml_confidence * 0.4))
+    # ── STAGE 3: Intent-Feature Vector + Ensemble ML Blending ──
+    intent_vector = extract_intent_features(text, sender)
+    ml_result = classifier.predict(text, sender=sender, intent_features=intent_vector)
+
+    if ml_result.get("early_exit"):
+        return AnalysisResult(
+            is_scam=False,
+            confidence=0,
+            category="DLT_INFORMATIONAL",
+            explanation="[SAFE] Verified DLT sender with legitimate informational template.",
+        )
+
+    # Blended ensemble score: (TF-IDF score * 0.5) + (intent_score * 0.5)
+    final_score = ml_result["confidence"]
+
+    f1, f2, f3, f4, f5 = intent_vector
+    if f1 > 0: reasons.append("Intent: Shortened or unknown URL (+30)")
+    if f2 > 0: reasons.append("Intent: Requests OTP/PIN/CVV/KYC credentials (+40)")
+    if f3 > 0: reasons.append("Intent: Urgency + call-to-action combo (+25)")
+    if f4 > 0: reasons.append("Intent: Impersonates bank/govt without DLT header (+35)")
+    if f5 > 0: reasons.append("Intent: Requests callback to unlisted number (+20)")
 
     # 6. STEP 8: FINAL CONFLICT RESOLUTION
     if has_otp_words and not has_links and final_score < 50:
@@ -527,7 +574,7 @@ def _analyze_text(text: str, metadata: dict = None) -> AnalysisResult:
 
     # 7. STEP 7: FINAL SCORING
     is_scam = False
-    if final_score >= 50:
+    if final_score >= 60:
         verdict = "SCAM"
         is_scam = True
     elif final_score >= 25:
@@ -538,9 +585,9 @@ def _analyze_text(text: str, metadata: dict = None) -> AnalysisResult:
         is_scam = False
 
     if ml_result["is_scam"] and final_score < 50:
-        reasons.append(f"ML Model flagged but overriding due to score: ({ml_confidence}% conf)")
+        reasons.append(f"ML Model flagged but overriding due to score: ({final_score}% conf)")
     elif ml_result["is_scam"]:
-        reasons.append(f"ML Model detected scam pattern ({ml_confidence}% conf)")
+        reasons.append(f"Ensemble Model flagged threat ({final_score}% conf, TF-IDF={ml_result['tfidf_confidence']}%, Intent={ml_result['intent_confidence']}%)")
 
     if not reasons:
         reasons.append("No suspicious patterns detected. Message appears safe.")

@@ -41,6 +41,7 @@ class User(Base):
     prescriptions = sqlalchemy_relationship("Prescription", back_populates="user")
     tasks_assigned = sqlalchemy_relationship("Task", foreign_keys="[Task.guardian_id]", back_populates="guardian")
     tasks_received = sqlalchemy_relationship("Task", foreign_keys="[Task.elder_id]", back_populates="elder")
+    correction_logs = sqlalchemy_relationship("CorrectionLog", back_populates="user")
 
 
 class HealthProfile(Base):
@@ -308,3 +309,18 @@ class Task(Base):
 
     guardian = sqlalchemy_relationship("User", foreign_keys=[guardian_id], back_populates="tasks_assigned")
     elder = sqlalchemy_relationship("User", foreign_keys=[elder_id], back_populates="tasks_received")
+
+
+class CorrectionLog(Base):
+    __tablename__ = "correction_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    sender_header = Column(String, index=True, nullable=True)
+    message_hash = Column(String, index=True, nullable=False)
+    message_content = Column(Text, nullable=True)
+    false_positive = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    user = sqlalchemy_relationship("User", back_populates="correction_logs")
+

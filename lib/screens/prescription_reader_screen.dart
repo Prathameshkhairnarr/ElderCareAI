@@ -88,8 +88,12 @@ class _PrescriptionReaderScreenState extends State<PrescriptionReaderScreen> {
           _isLoading = false;
         });
 
-        // Save to history if analysis was successful
-        if (result != null && result.isNotEmpty) {
+        // Save to history only if it's a valid prescription (not a rejected non-prescription photo)
+        final isInvalidImage = result == null ||
+            result.contains('Yeh Doctor Ki Prescription Nahi Hai') ||
+            result.contains('Prescription Nahi Hai');
+
+        if (result != null && result.isNotEmpty && !isInvalidImage) {
           final record = PrescriptionRecord(
             id: const Uuid().v4(),
             result: result,
@@ -249,59 +253,109 @@ class _PrescriptionReaderScreenState extends State<PrescriptionReaderScreen> {
                 ),
 
               // Result View
-              if (_resultText != null)
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                     color: cs.surfaceContainerHighest,
-                     borderRadius: BorderRadius.circular(24),
-                     border: Border.all(color: cs.primary.withValues(alpha: 0.2)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Doctor Note Header
-                      Row(
+              if (_resultText != null) ...[
+                Builder(
+                  builder: (context) {
+                    final isInvalidPrescription =
+                        _resultText!.contains('Yeh Doctor Ki Prescription Nahi Hai') ||
+                        _resultText!.contains('Prescription Nahi Hai') ||
+                        _resultText!.startsWith('Error:');
+
+                    final headerColor = isInvalidPrescription ? Colors.amber.shade700 : cs.primary;
+                    final headerBg = isInvalidPrescription
+                        ? Colors.amber.withValues(alpha: 0.15)
+                        : cs.primary.withValues(alpha: 0.15);
+                    final headerIcon = isInvalidPrescription
+                        ? Icons.warning_amber_rounded
+                        : Icons.health_and_safety_rounded;
+                    final headerTitle = isInvalidPrescription
+                        ? 'Dhyan Dijiye'
+                        : 'Doctor Veda says';
+
+                    return Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: isInvalidPrescription
+                            ? Colors.amber.withValues(alpha: 0.08)
+                            : cs.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: isInvalidPrescription
+                              ? Colors.amber.withValues(alpha: 0.4)
+                              : cs.primary.withValues(alpha: 0.2),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: cs.primary.withValues(alpha: 0.15),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(Icons.health_and_safety_rounded, color: cs.primary),
+                          // Doctor Note Header
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: headerBg,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(headerIcon, color: headerColor),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  headerTitle,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: headerColor,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Doctor Veda says',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: cs.onSurface.withValues(alpha: 0.7),
+                          const SizedBox(height: 16),
+                          // Markdown/Formatted Result Text
+                          RichText(
+                            text: TextSpan(
+                              style: const TextStyle(
+                                fontSize: 15,
+                                height: 1.6,
+                                fontFamily: 'Roboto',
+                              ),
+                              children: _parseMarkdownBold(
+                                _resultText!,
+                                cs.onSurface.withValues(alpha: 0.9),
                               ),
                             ),
                           ),
+                          if (isInvalidPrescription || _resultText!.startsWith('Error:')) ...[
+                            const SizedBox(height: 18),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: _isLoading ? null : _analyzeImage,
+                                icon: const Icon(Icons.refresh_rounded),
+                                label: const Text(
+                                  'Dobara Koshish Karein (Retry)',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: headerColor,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      // Markdown/Formatted Result Text
-                      RichText(
-                        text: TextSpan(
-                          style: TextStyle(
-                            fontSize: 15,
-                            height: 1.6,
-                            fontFamily: 'Roboto', // Matches default but ensures RichText renders properly
-                          ),
-                          children: _parseMarkdownBold(
-                            _resultText!, 
-                            cs.onSurface.withValues(alpha: 0.9)
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
+              ],
             ],
           ),
         ),

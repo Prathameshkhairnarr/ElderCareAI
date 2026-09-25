@@ -61,7 +61,7 @@ class TaskReminderService {
         message = "Aapne paani piya? Thoda paani zaroor piyein: ${task.title}.";
       }
 
-      await _voiceEngine.speak(message);
+      await _voiceEngine.speak(message, 'hi-IN');
       
       // Delay before next TTS if needed
       await Future.delayed(const Duration(seconds: 2));

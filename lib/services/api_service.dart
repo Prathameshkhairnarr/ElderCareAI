@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import '../models/risk_model.dart';
 import '../models/sms_model.dart';
@@ -204,6 +205,39 @@ class ApiService {
       return null;
     } catch (e) {
       AppLogger.error(LogCategory.risk, 'resolveSmsRisk error: $e');
+      return null;
+    }
+  }
+
+  /// Report a false-positive SMS (Stage 5 feedback loop).
+  /// Logs user correction, resolves threat, and auto-promotes header to whitelist if 3+ reports.
+  Future<Map<String, dynamic>?> reportFalsePositive({
+    String? senderHeader,
+    required String messageContent,
+  }) async {
+    try {
+      final normalized = messageContent.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+      final messageHash = sha256.convert(utf8.encode(normalized)).toString();
+
+      final result = await _http.post(
+        Uri.parse('$_baseUrl/sms/false-positive'),
+        headers: _headers,
+        body: jsonEncode({
+          'sender_header': senderHeader,
+          'message_hash': messageHash,
+          'message_content': messageContent,
+          'false_positive': true,
+        }),
+      );
+
+      if (result.isSuccess) {
+        final data = jsonDecode(result.body) as Map<String, dynamic>;
+        AppLogger.info(LogCategory.sms, 'False-positive reported: $data');
+        return data;
+      }
+      return null;
+    } catch (e) {
+      AppLogger.error(LogCategory.sms, 'reportFalsePositive error: $e');
       return null;
     }
   }
@@ -814,7 +848,7 @@ class ApiService {
 
   Future<TaskModel?> updateTaskStatus(int taskId, String status, {int? snoozeMinutes}) async {
     try {
-      final body = {'status': status};
+      final Map<String, dynamic> body = {'status': status};
       if (snoozeMinutes != null) {
         body['snooze_minutes'] = snoozeMinutes;
       }

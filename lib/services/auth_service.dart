@@ -193,10 +193,10 @@ class AuthService {
             body: {'username': normalizedPhone, 'password': pin},
           )
           .timeout(
-            const Duration(seconds: 10), // Reduced timeout for faster feedback
+            const Duration(seconds: 45), // Generous timeout for Render free tier cold-starts
             onTimeout: () {
               throw Exception(
-                'Connection timed out. Check IP & ensure Phone/PC are on same Wi-Fi.',
+                'Connection timed out. The server was waking up, please click Sign In again.',
               );
             },
           );

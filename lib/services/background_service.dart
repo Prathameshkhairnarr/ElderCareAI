@@ -205,32 +205,43 @@ Future<void> processSms(String body, String sender) async {
       }
 
       if (shouldNotify) {
-        String titlePrefix = classification.label == 'PHISHING_LINK'
-            ? '🛑 Dangerous Link'
-            : '⚠️ Potential Scam';
-        _showNotification(
-          '$titlePrefix from $sender',
-          classification.explanation,
-          true,
-        );
-
-        // ── Voice Alert for scam ──
-        try {
-          VoiceAlertService().speakAlert(
-            'Warning! Yeh message scam ho sakta hai. $sender se aaya hai. '
-            'Kripya is message ka jawab na de.',
-            priority: AlertPriority.high,
-            category: AlertCategory.scam,
+        final isHighConfidence = classification.confidenceTier == ConfidenceTier.high;
+        if (isHighConfidence) {
+          // HIGH CONFIDENCE: loud voice alert + red banner
+          String titlePrefix = classification.label == 'PHISHING_LINK'
+              ? '🛑 Dangerous Link'
+              : '🚨 Potential Scam Threat';
+          _showNotification(
+            '$titlePrefix from $sender',
+            classification.explanation,
+            true,
           );
-        } catch (_) {}
 
-        AppLogger.info(
-          LogCategory.sms,
-          'Alert fired for ${classification.scamType}',
-        );
+          // ── Loud Voice Alert for High-Confidence Scam ──
+          try {
+            VoiceAlertService().speakAlert(
+              'Warning! Yeh message scam ho sakta hai. $sender se aaya hai. '
+              'Kripya is message ka jawab na de.',
+              priority: AlertPriority.high,
+              category: AlertCategory.scam,
+            );
+          } catch (_) {}
+
+          AppLogger.info(
+            LogCategory.sms,
+            'High-confidence scam alert + loud voice fired for ${classification.scamType}',
+          );
+        } else {
+          // MEDIUM CONFIDENCE: silent entry, shows in Alert History, no scary voice alert
+          AppLogger.info(
+            LogCategory.sms,
+            'Medium-confidence threat recorded silently (no scary voice alert) for review: ${classification.scamType}',
+          );
+        }
       } else {
         AppLogger.info(LogCategory.sms, 'Alert suppressed by policy');
       }
+
     }
   } catch (e, stackTrace) {
     AppLogger.error(LogCategory.sms, 'CRITICAL ERROR in processSms: $e');
