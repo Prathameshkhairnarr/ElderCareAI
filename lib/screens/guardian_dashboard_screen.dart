@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/alert_model.dart';
 import '../services/api_service.dart';
@@ -39,17 +40,17 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> with 
     ChildStatsModel(id: 102, childName: "Priya", childPhone: "+91 9123456780", screenTimeMins: 82, locationStatus: "At Home", unreadAlerts: 1),
   ];
 
-  // ── Theme ─────────────────────────────────────────────────────────────────
-  static const _bg = Color(0xFF0D0F1F);
-  static const _surface = Color(0xFF1A1D2E);
-  static const _cardBg = Color(0xFF151829);
-  static const _blue = Color(0xFF3B82F6);
+  // ── Theme (Matched with ElderCare App Theme) ──────────────────────────────
+  static const _bg = Color(0xFF12122A);
+  static const _surface = Color(0xFF1A1A2E);
+  static const _cardBg = Color(0xFF222244);
+  static const _blue = Color(0xFF4FC3F7); // Elder primary cyan
   static const _textPri = Colors.white;
   static const _textSec = Color(0xFFB0B3C1);
-  static const _green = Color(0xFF22C55E);
-  static const _amber = Color(0xFFF59E0B);
-  static const _red = Color(0xFFEF4444);
-  static const _purple = Color(0xFF8B5CF6);
+  static const _green = Color(0xFF00E676);
+  static const _amber = Color(0xFFFFB74D);
+  static const _red = Color(0xFFFF5252);
+  static const _purple = Color(0xFF7C4DFF); // Elder secondary purple
 
   @override
   void initState() {
@@ -148,67 +149,147 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> with 
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      body: IndexedStack(index: _bottomNavIndex, children: [_buildDashboardBody(), _buildAlertsPage(), const GuardianSettingsScreen()]),
-      bottomNavigationBar: _buildBottomNav(),
-    );
-  }
-
-  Widget _buildBottomNav() {
-    return Container(
-      decoration: BoxDecoration(color: _surface, border: Border(top: BorderSide(color: Colors.white.withOpacity(0.07)))),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-          child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-            _navItem(0, Icons.dashboard_rounded, 'Dashboard'),
-            _navItem(1, Icons.notifications_rounded, 'Alerts'),
-            _navItem(2, Icons.settings_rounded, 'Settings'),
-          ]),
-        ),
+      body: IndexedStack(
+        index: _bottomNavIndex,
+        children: [
+          _buildDashboardBody(),
+          _buildAlertsPage(),
+          const GuardianSettingsScreen(),
+        ],
       ),
-    );
-  }
-
-  Widget _navItem(int i, IconData icon, String label) {
-    final active = _bottomNavIndex == i;
-    return GestureDetector(
-      onTap: () => setState(() => _bottomNavIndex = i),
-      behavior: HitTestBehavior.opaque,
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 22, color: active ? _blue : _textSec),
-        const SizedBox(height: 4),
-        Text(label, style: TextStyle(color: active ? _blue : _textSec, fontSize: 10, fontWeight: FontWeight.w700)),
-      ]),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _bottomNavIndex,
+        onDestinationSelected: (i) => setState(() => _bottomNavIndex = i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.dashboard_rounded),
+            label: 'Dashboard',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.notifications_rounded),
+            label: 'Alerts',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_rounded),
+            label: 'Settings',
+          ),
+        ],
+      ),
     );
   }
 
   // ── Dashboard body ────────────────────────────────────────────────────────
   Widget _buildDashboardBody() {
-    return SafeArea(child: Column(children: [
-      _buildHeader(),
-      TabBar(controller: _tabController, indicatorColor: _blue, indicatorWeight: 3, labelColor: _blue, unselectedLabelColor: _textSec, labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15), tabs: const [Tab(text: "Elders"), Tab(text: "Children"), Tab(text: "Alerts")]),
-      Expanded(child: _isLoading ? const Center(child: CircularProgressIndicator(color: _blue)) : TabBarView(controller: _tabController, children: [_buildEldersTab(), _buildChildrenTab(), _buildAlertsTab()])),
-    ]));
+    return SafeArea(
+      child: Column(
+        children: [
+          _buildHeader(),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: TabBar(
+              controller: _tabController,
+              indicator: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: _blue.withValues(alpha: 0.20),
+                border: Border.all(color: _blue.withValues(alpha: 0.40)),
+              ),
+              dividerColor: Colors.transparent,
+              labelColor: _blue,
+              unselectedLabelColor: Colors.white.withValues(alpha: 0.6),
+              labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 14),
+              unselectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
+              tabs: const [
+                Tab(text: "Elders"),
+                Tab(text: "Children"),
+                Tab(text: "Alerts"),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator(color: _blue))
+                : TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildEldersTab(),
+                      _buildChildrenTab(),
+                      _buildAlertsTab(),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 16, 8),
-      child: Row(children: [
-        const Expanded(child: Text('Guardian Dashboard', style: TextStyle(color: _textPri, fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.5))),
-        IconButton(
-          icon: Stack(children: [
-            const Icon(Icons.notifications_outlined, color: _textSec, size: 24),
-            if (_allAlerts.any((a) => !a.isRead)) Positioned(right: 0, top: 0, child: Container(width: 8, height: 8, decoration: const BoxDecoration(color: _red, shape: BoxShape.circle))),
-          ]),
-          onPressed: () => setState(() => _bottomNavIndex = 1),
-        ),
-        const SizedBox(width: 4),
-        GestureDetector(
-          onTap: _loadDashboard,
-          child: Container(width: 36, height: 36, decoration: BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [_blue, _blue.withOpacity(0.6)]), border: Border.all(color: _blue.withOpacity(0.4), width: 2)), child: const Center(child: Icon(Icons.person, color: Colors.white, size: 18))),
-        ),
-      ]),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Guardian Dashboard',
+              style: GoogleFonts.inter(
+                color: _textPri,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+              ),
+            ),
+          ),
+          IconButton(
+            icon: Stack(
+              children: [
+                const Icon(Icons.notifications_outlined, color: _textSec, size: 24),
+                if (_allAlerts.any((a) => !a.isRead))
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: _red,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            onPressed: () => setState(() => _bottomNavIndex = 1),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: _loadDashboard,
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [_blue, _purple],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                border: Border.all(
+                  color: _blue.withValues(alpha: 0.5),
+                  width: 2,
+                ),
+              ),
+              child: const Center(
+                child: Icon(Icons.person, color: Colors.white, size: 20),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -300,31 +381,46 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> with 
       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ElderDetailScreen(elder: elder))),
       child: Container(
         margin: const EdgeInsets.only(bottom: 18),
-        decoration: BoxDecoration(color: _cardBg, borderRadius: BorderRadius.circular(22), border: Border.all(color: Colors.white.withOpacity(0.05))),
-        child: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
+        decoration: BoxDecoration(
+          color: _cardBg,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.20),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Padding(padding: const EdgeInsets.all(18), child: Column(children: [
           // Avatar + Name + Badge
           Row(children: [
-            Container(width: 50, height: 50, decoration: BoxDecoration(shape: BoxShape.circle, color: rc.withOpacity(0.10), border: Border.all(color: rc.withOpacity(0.6), width: 2.5)),
+            Container(width: 52, height: 52, decoration: BoxDecoration(shape: BoxShape.circle, color: rc.withValues(alpha: 0.12), border: Border.all(color: rc.withValues(alpha: 0.5), width: 2)),
               child: Center(child: Text(elder.elderName.isNotEmpty ? elder.elderName[0].toUpperCase() : 'E', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: rc)))),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(elder.elderName, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: _textPri)),
+              Text(elder.elderName, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: _textPri)),
               const SizedBox(height: 5),
-              Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: rc.withOpacity(0.15), borderRadius: BorderRadius.circular(6)),
-                child: Text('$rl · ${elder.riskScore}', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: rc))),
+              Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3), decoration: BoxDecoration(color: rc.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20), border: Border.all(color: rc.withValues(alpha: 0.3))),
+                child: Text('$rl · Risk ${elder.riskScore}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: rc))),
             ])),
             if (elder.unreadAlertsCount > 0)
-              Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: _red.withOpacity(0.15), shape: BoxShape.circle),
-                child: Text('${elder.unreadAlertsCount}', style: const TextStyle(color: _red, fontSize: 11, fontWeight: FontWeight.bold))),
+              Container(padding: const EdgeInsets.all(7), decoration: BoxDecoration(color: _red.withValues(alpha: 0.2), shape: BoxShape.circle),
+                child: Text('${elder.unreadAlertsCount}', style: const TextStyle(color: _red, fontSize: 12, fontWeight: FontWeight.bold))),
           ]),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           // Vitals
-          Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-            _stat(Icons.favorite_rounded, 'HEART', hr == '—' ? '—' : '$hr bpm', _red),
-            _vDiv(), _stat(Icons.directions_walk_rounded, 'STEPS', steps, _blue),
-            _vDiv(), _stat(Icons.access_time_rounded, 'STATUS', status, _green),
-          ]),
-          const SizedBox(height: 14), const Divider(color: Colors.white10), const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _stat(Icons.favorite_rounded, 'HEART', hr == '—' ? '—' : '$hr bpm', _red),
+              _stat(Icons.directions_walk_rounded, 'STEPS', steps, _blue),
+              _stat(Icons.access_time_rounded, 'STATUS', status, _green),
+            ],
+          ),
+          const SizedBox(height: 16), const Divider(color: Colors.white12), const SizedBox(height: 8),
           // Actions
           Row(children: [
             _actBtn(Icons.phone_rounded, "Call", _green, () => _callElder(elder.elderPhone)),
@@ -339,9 +435,9 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> with 
 
   Widget _actBtn(IconData icon, String label, Color c, VoidCallback onTap) {
     return Expanded(child: GestureDetector(onTap: onTap, child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: BoxDecoration(color: c.withOpacity(0.08), borderRadius: BorderRadius.circular(10), border: Border.all(color: c.withOpacity(0.2))),
-      child: Column(children: [Icon(icon, color: c, size: 18), const SizedBox(height: 3), Text(label, style: TextStyle(color: c, fontSize: 10, fontWeight: FontWeight.w700))]),
+      padding: const EdgeInsets.symmetric(vertical: 11),
+      decoration: BoxDecoration(color: c.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(14), border: Border.all(color: c.withValues(alpha: 0.25))),
+      child: Column(children: [Icon(icon, color: c, size: 18), const SizedBox(height: 4), Text(label, style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.w700))]),
     )));
   }
 
@@ -361,27 +457,42 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> with 
     final h = child.screenTimeMins ~/ 60, m = child.screenTimeMins % 60;
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
-      decoration: BoxDecoration(color: _cardBg, borderRadius: BorderRadius.circular(22), border: Border.all(color: Colors.white.withOpacity(0.05))),
-      child: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
+      decoration: BoxDecoration(
+        color: _cardBg,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.20),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Padding(padding: const EdgeInsets.all(18), child: Column(children: [
         Row(children: [
-          Container(width: 48, height: 48, decoration: BoxDecoration(shape: BoxShape.circle, color: _blue.withOpacity(0.10), border: Border.all(color: _blue.withOpacity(0.50), width: 2.5)),
+          Container(width: 50, height: 50, decoration: BoxDecoration(shape: BoxShape.circle, color: _blue.withValues(alpha: 0.12), border: Border.all(color: _blue.withValues(alpha: 0.50), width: 2)),
             child: Center(child: Text(child.childName[0].toUpperCase(), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _blue)))),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(child.childName, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: _textPri)),
+            Text(child.childName, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: _textPri)),
             const SizedBox(height: 4),
-            Text(child.childPhone, style: TextStyle(fontSize: 12, color: _textSec.withOpacity(0.6))),
+            Text(child.childPhone, style: TextStyle(fontSize: 12, color: _textSec.withValues(alpha: 0.7))),
           ])),
-          Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: _green.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+          Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), decoration: BoxDecoration(color: _green.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20), border: Border.all(color: _green.withValues(alpha: 0.3))),
             child: Text(child.locationStatus, style: const TextStyle(color: _green, fontWeight: FontWeight.bold, fontSize: 11))),
         ]),
-        const SizedBox(height: 16),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-          _stat(Icons.timer_rounded, 'SCREEN', '${h}h ${m}m', _amber),
-          _vDiv(), _stat(Icons.location_on_rounded, 'SEEN', '10 min ago', _purple),
-          _vDiv(), _stat(Icons.shield_rounded, 'ALERTS', '${child.unreadAlerts}', _green),
-        ]),
-        const SizedBox(height: 14), const Divider(color: Colors.white10), const SizedBox(height: 8),
+        const SizedBox(height: 18),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _stat(Icons.timer_rounded, 'SCREEN', '${h}h ${m}m', _amber),
+            _stat(Icons.location_on_rounded, 'SEEN', '10 min ago', _purple),
+            _stat(Icons.shield_rounded, 'ALERTS', '${child.unreadAlerts}', _green),
+          ],
+        ),
+        const SizedBox(height: 16), const Divider(color: Colors.white12), const SizedBox(height: 8),
         Row(children: [
           _actBtn(Icons.phonelink_lock_rounded, "Lock", _amber, () => _snack('Screen Lock Request Sent')),
           const SizedBox(width: 8), _actBtn(Icons.phone_rounded, "Call", _green, () => _callElder(child.childPhone)),
@@ -531,22 +642,230 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> with 
 
   // ── Shared widgets ────────────────────────────────────────────────────────
   Widget _stat(IconData icon, String label, String value, Color c) {
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 16, color: c.withOpacity(0.7)), const SizedBox(width: 6),
-      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _textPri)),
-        Text(label, style: TextStyle(fontSize: 9, color: _textSec.withOpacity(0.6), fontWeight: FontWeight.w600, letterSpacing: 0.5)),
-      ]),
-    ]);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: c.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 15, color: c),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: _textPri,
+                ),
+              ),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 9,
+                  color: _textSec.withValues(alpha: 0.7),
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
-  Widget _vDiv() => Container(height: 28, width: 0.5, color: Colors.white.withOpacity(0.08));
-
   Widget _emptyState(String type) {
-    return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Icon(type == "Elders" ? Icons.elderly_rounded : Icons.child_care_rounded, size: 56, color: _blue.withOpacity(0.5)),
-      const SizedBox(height: 24), Text('No $type Added', style: const TextStyle(color: _textPri, fontSize: 20, fontWeight: FontWeight.w700)),
-      const SizedBox(height: 12), Text('You are not tracking any $type yet.', style: const TextStyle(color: _textSec)),
-    ]));
+    final isElder = type == "Elders";
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+      child: Center(
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
+          decoration: BoxDecoration(
+            color: _cardBg,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.25),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _blue.withValues(alpha: 0.12),
+                  border: Border.all(
+                    color: _blue.withValues(alpha: 0.35),
+                    width: 2,
+                  ),
+                ),
+                child: Center(
+                  child: Icon(
+                    isElder ? Icons.elderly_rounded : Icons.child_care_rounded,
+                    size: 40,
+                    color: _blue,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'No $type Connected',
+                style: GoogleFonts.inter(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                isElder
+                    ? 'Connect an elder to monitor real-time safety, fraud threats, health vitals, and emergency SOS alerts.'
+                    : 'Connect a child to monitor screen time, safe locations, and send instant check-in reminders.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  height: 1.5,
+                  color: Colors.white.withValues(alpha: 0.65),
+                ),
+              ),
+              const SizedBox(height: 26),
+              ElevatedButton.icon(
+                onPressed: isElder ? _showAddElderDialog : null,
+                icon: const Icon(Icons.add_rounded, size: 20),
+                label: Text(isElder ? 'Add / Link Elder' : 'Add Child'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _blue,
+                  foregroundColor: const Color(0xFF12122A),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: 0,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAddElderDialog() {
+    final phoneController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _blue.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.person_add_rounded, color: _blue, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Link Elder',
+              style: GoogleFonts.inter(
+                color: _textPri,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Enter the registered phone number of the elder (e.g. 9876500003).',
+              style: GoogleFonts.inter(
+                color: _textSec,
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: phoneController,
+              keyboardType: TextInputType.phone,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: "Phone number (10 digits)",
+                hintStyle: TextStyle(color: _textSec.withValues(alpha: 0.6)),
+                filled: true,
+                fillColor: _bg,
+                prefixIcon: const Icon(Icons.phone_rounded, color: _blue, size: 20),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: _blue, width: 1.5),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: TextStyle(color: _textSec)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final phone = phoneController.text.trim();
+              if (phone.length < 10) {
+                _snack('Please enter a valid 10-digit phone number');
+                return;
+              }
+              Navigator.pop(ctx);
+              _snack('Linking elder account...');
+              await _loadDashboard();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _blue,
+              foregroundColor: const Color(0xFF12122A),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Connect', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 }

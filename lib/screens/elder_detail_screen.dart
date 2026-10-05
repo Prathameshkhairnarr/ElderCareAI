@@ -15,17 +15,17 @@ class ElderDetailScreen extends StatefulWidget {
 }
 
 class _ElderDetailScreenState extends State<ElderDetailScreen> {
-  // ── Theme ─────────────────────────────────────────────
-  static const _bg = Color(0xFF0D0F1F);
-  static const _surface = Color(0xFF1A1D2E);
-  static const _cardBg = Color(0xFF151829);
-  static const _blue = Color(0xFF3B82F6);
+  // ── Theme (Matched with ElderCare App Theme) ─────────
+  static const _bg = Color(0xFF12122A);
+  static const _surface = Color(0xFF1A1A2E);
+  static const _cardBg = Color(0xFF222244);
+  static const _blue = Color(0xFF4FC3F7); // Elder primary cyan
   static const _textPri = Colors.white;
   static const _textSec = Color(0xFFB0B3C1);
-  static const _green = Color(0xFF22C55E);
-  static const _amber = Color(0xFFF59E0B);
-  static const _red = Color(0xFFEF4444);
-  static const _purple = Color(0xFF8B5CF6);
+  static const _green = Color(0xFF00E676);
+  static const _amber = Color(0xFFFFB74D);
+  static const _red = Color(0xFFFF5252);
+  static const _purple = Color(0xFF7C4DFF); // Elder secondary purple
 
   final ApiService _api = ApiService();
   bool _isLoading = true;
